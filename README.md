@@ -33,10 +33,9 @@ cd mdnav
 ./install.sh
 ```
 
-Requires `mdcat`, `python3`, and bash 4.3+ (macOS ships bash 3.2; use
-`brew install bash`). `install.sh` symlinks `mdnav` into
-`~/.local/bin` and registers the `mdnav://` scheme with your desktop.
-`./uninstall.sh` removes both, including the registry keys on WSL.
+Requires `mdcat`, `python3`, and bash 3.2 or newer. `install.sh` symlinks
+`mdnav` into `~/.local/bin` and registers the `mdnav://` scheme with your
+desktop. `./uninstall.sh` removes both, including the registry keys on WSL.
 
 ### Locked-down machines
 
