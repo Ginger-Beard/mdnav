@@ -18,112 +18,38 @@ mdnav README.md
 ```
 
 ```
-space, wheel   next screenful
-ctrl+click     follow a link
-shift+wheel    scroll back through what you have read
-l              list links, pick one by number
-backspace      back to the previous file
-G              rest of the file at once
-r              reload
-q              quit
+up/down, k/j, wheel    scroll a line
+space/PgDn, b/PgUp     scroll a page
+g / G                  top / bottom
+ctrl+click             follow a link
+l                      list links, pick one by number
+backspace              back to the previous file
+r                      reload
+q                      quit
 ```
 
-mdnav holds the first screen at the top of the document, then prints the
-rest on any key. After that it is the same as running mdcat: the output is
-in the terminal's own scrollback, and scrolling is the terminal's, wheel
-included.
+It is a pager: opens at the top, scrolls both ways, no flags.
 
-`--all` skips the pause; `--page` pauses every screenful instead of only
-the first.
+### Images are sliced
 
-### Why it pauses at all
+An image would normally make that impossible. A sixel image is a single
+escape sequence the terminal rasterises whole, routinely tens of rows
+tall, and nothing above the terminal can say how tall it came out or draw
+part of it. A pager cannot lay out what it cannot measure, which is also
+why `less` mangles mdcat's output: it counts a 79-row image as one line.
 
-Starting at the top and having the whole document already printed are
-mutually exclusive, and not for want of trying:
+So mdnav cuts each image into strips exactly one text row tall, one sixel
+escape each, before rendering. Every line in the buffer is then exactly
+one screen row. Layout is arithmetic again, and a half-scrolled image is
+just the strips that fall inside the window.
 
-- The terminal follows output downwards, so printing a document longer
-  than the screen always ends with the view at its bottom.
-- The viewport cannot be moved back up. `CSI T` inserts blank lines and
-  discards the bottom of the buffer rather than restoring anything from
-  scrollback.
-- Repainting a window into the document -- what `less` does -- cannot work
-  with images. A sixel image is one escape the terminal rasterises whole,
-  so a partially-scrolled image cannot be drawn at all; only the
-  terminal's scrollback renders one correctly, and content reaches
-  scrollback only by being scrolled past.
+This needs ImageMagick (`convert`) and a sixel terminal. Without either,
+images are left whole and drawn by mdcat -- everything still works, but a
+tall image jumps into view rather than scrolling.
 
-Hence one pause: enough to hold the top of the document on screen, after
-which mdnav stops interfering and the terminal does what it always does.
-
-## Install
-
-```
-git clone https://github.com/YOU/mdnav
-cd mdnav
-./install.sh
-```
-
-Requires [`mdcat`](#installing-mdcat), `python3`, and bash 3.2 or newer. `install.sh` symlinks
-`mdnav` into `~/.local/bin` and registers the `mdnav://` scheme with your
-desktop. `./uninstall.sh` removes both, including the registry keys on WSL.
-
-### Locked-down machines
-
-Clicking needs the `mdnav://` scheme registered, and on Windows the registry is
-the only mechanism for that. The keys go under `HKEY_CURRENT_USER`, so no admin
-rights are involved and it usually works on managed laptops — but some are
-locked down further.
-
-If the write fails, `install.sh` says so and leaves everything else working. It
-also writes `mdnav-install.reg` and `mdnav-uninstall.reg` into
-`%LOCALAPPDATA%\mdnav\`, so you can review the change, apply it by
-double-clicking, or hand it to whoever administers the machine. It adds nothing
-outside `HKEY_CURRENT_USER\Software\Classes\mdnav`.
-
-To skip registration entirely:
-
-```
-./install.sh --no-scheme
-```
-
-mdnav works without it — you follow links with `l` and a number rather than by
-clicking. You don't need to install anything at all for that; `./bin/mdnav` runs
-as-is.
-
-### Installing mdcat
-
-```
-brew install mdcat          # macOS
-pacman -S mdcat             # Arch
-cargo install mdcat         # anywhere with a Rust toolchain
-```
-
-Prebuilt binaries are on [mdcat's releases
-page](https://github.com/swsnr/mdcat/releases). It is not packaged for Debian
-or Ubuntu.
-
-Building with `cargo` on Debian/Ubuntu needs the OpenSSL headers first,
-otherwise the build fails partway through on `openssl-sys`:
-
-```
-sudo apt install pkg-config libssl-dev
-```
-
-### Images
-
-mdcat picks an image protocol by asking the terminal, and gets it wrong on
-Windows Terminal — it concludes `ansi` and drops images silently, with no
-warning that it did. mdnav probes for sixel itself and passes the answer
-explicitly, so images work without configuration.
-
-Plain `mdcat` still needs to be told, so `install.sh` offers to add this to
-your shell rc:
-
-```
-export MDCAT_IMAGE_PROTOCOL=sixel
-```
-
-Override the choice for mdnav alone with `MDNAV_IMAGE_PROTOCOL`.
+Strips are cached under `~/.cache/mdnav`, keyed by the image, its
+modification time, and the width it was rendered for. Slicing a tall image
+takes about a second; afterwards it is immediate.
 
 ## How it works
 

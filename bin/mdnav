@@ -1,31 +1,28 @@
 #!/usr/bin/env bash
 # mdnav -- mdcat, with links you can click.
 #
-# Renders Markdown with mdcat (images and all), pages it a screenful at a
-# time so reading starts at the top, and stays running so that clicking a
-# link to another local file re-renders it in the same pane instead of
-# handing it to some other application.
+# Renders Markdown with mdcat, images included, and behaves like a pager:
+# opens at the top, scrolls both ways, and follows a link to another local
+# file in the same pane instead of handing it to another application.
 #
-# See README.md for how the click round-trip works.
+# Images are sliced into strips one text row tall before rendering, which
+# is what makes the rest possible: every line in the buffer occupies
+# exactly one screen row, so the window arithmetic is exact and a
+# half-scrolled image is simply the strips that fall inside it.
 set -uo pipefail
 
-VERSION=0.3.0
+VERSION=0.4.0
 MDCAT="${MDCAT_BIN:-mdcat}"
 SCHEME="${MDNAV_SCHEME:-mdnav}"
-# Deliberately not under XDG_RUNTIME_DIR: the handler is launched by the
-# desktop (via wsl.exe on WSL) and need not share this shell's environment.
-# Both ends must derive the same path with no environment involved.
 FIFO="${MDNAV_FIFO:-/tmp/mdnav-$(id -u).fifo}"
+CACHE="${XDG_CACHE_HOME:-$HOME/.cache}/mdnav"
 
-# Neither `readlink -f` nor `realpath` exists everywhere (BSD/macOS), and
-# python3 is already required.
 abspath() { python3 -c 'import os,sys;print(os.path.realpath(sys.argv[1]))' "$1"; }
 here="$(cd "$(dirname "$(abspath "${BASH_SOURCE[0]}")")" && pwd)"
 LIB="$here/../lib"
 
 die() { printf 'mdnav: %s\n' "$*" >&2; exit 1; }
 
-# MDNAV_DEBUG=/path/to/log turns on a full trace, kept off the screen.
 if [ -n "${MDNAV_DEBUG:-}" ]; then
     exec 4>>"$MDNAV_DEBUG"
     BASH_XTRACEFD=4
@@ -38,35 +35,27 @@ mdnav $VERSION -- mdcat, with links you can click.
 
 usage: mdnav [options] <file.md>
 
-  -a, --all      no pause at all: print everything, then just scroll
-  -p, --page     pause every screenful, rather than only the first
-  -c, --cat      render it all at once and exit (like mdcat)
+  -c, --cat      render once to stdout and exit (like mdcat)
   -h, --help     this text
   -V, --version  print version
 
 keys:
-  space, down    show the rest       q          quit
-  G              show the rest
-  ctrl+click     follow a link      l          list links, pick by number
-  backspace      back to previous file
-  r              reload
-
-The wheel scrolls, as it always does -- mdnav prints into the terminal's
-own scrollback and leaves it alone. MDNAV_MOUSE=1 makes the wheel advance
-the pager instead, at the cost of scrolling back with it: shift+wheel
-still works, but the plain wheel would then belong to mdnav.
+  up/down, k/j, wheel    scroll a line
+  space/PgDn, b/PgUp     scroll a page
+  g / G                  top / bottom
+  ctrl+click             follow a link
+  l                      list links, pick one by number
+  backspace              back to the previous file
+  r                      reload
+  q                      quit
 EOF
 }
 
 cat_mode=0
-all_mode=0
-page_mode=0
 file=""
 while [ $# -gt 0 ]; do
     case "$1" in
         -c|--cat) cat_mode=1 ;;
-        -a|--all) all_mode=1 ;;
-        -p|--page) page_mode=1 ;;
         -h|--help) usage; exit 0 ;;
         -V|--version) echo "mdnav $VERSION"; exit 0 ;;
         -*) die "unknown option: $1" ;;
@@ -79,56 +68,79 @@ done
 [ -f "$file" ] || die "no such file: $file"
 command -v "$MDCAT" >/dev/null 2>&1 || die "mdcat not found (set MDCAT_BIN to override)"
 command -v python3 >/dev/null 2>&1 || die "python3 is required"
-for helper in mdnav_rewrite.py mdnav_detect.sh mdnav_pager.sh mdnav_keys.sh; do
+for helper in mdnav_rewrite.py mdnav_detect.sh mdnav_keys.sh mdnav_slice.py; do
     [ -f "$LIB/$helper" ] || die "missing helper: $LIB/$helper"
 done
 # shellcheck source=lib/mdnav_detect.sh
 . "$LIB/mdnav_detect.sh"
-# shellcheck source=lib/mdnav_pager.sh
-. "$LIB/mdnav_pager.sh"
 # shellcheck source=lib/mdnav_keys.sh
 . "$LIB/mdnav_keys.sh"
 
-# Probed once: the query costs a terminal round trip.
 IMAGE_PROTOCOL="$(mdnav_image_protocol)"
+# Slicing needs a cropper. Without one, images stay whole and mdcat draws
+# them -- everything still works, but a tall image jumps rather than
+# scrolling, because it is one indivisible escape again.
+SLICE=0
+if command -v convert >/dev/null 2>&1 && [ "$IMAGE_PROTOCOL" = "sixel" ]; then
+    SLICE=1
+fi
 
 current="$(abspath "$file")"
 declare -a stack=()
-declare -a BUFFER_LINES=()
-BUFFER_INDEX=0
+declare -a BUF=()
+top=0
 rows=24
 cols=80
+cell_w=10
+cell_h=20
 
 work="$(mktemp -d)"
 owns_fifo=0
 stty_saved=""
-mouse_on=0
+alt=0
 cleanup() {
-    [ "$mouse_on" = 1 ] && printf '\e[?1006l\e[?1000l'
+    if [ "$alt" = 1 ]; then
+        printf '\e[r'            # release the scrolling region
+        printf '\e[?1007l\e[?1049l'
+    fi
     rm -rf "$work"
     [ "$owns_fifo" = 1 ] && rm -f "$FIFO"
     printf '\e[?25h'
     [ -n "$stty_saved" ] && stty "$stty_saved" 2>/dev/null
 }
 trap cleanup EXIT
-# Without an explicit exit, bash runs the handler and then carries on -- the
-# loop would continue with its working directory already deleted.
 trap 'cleanup; exit 130' INT
 trap 'cleanup; exit 143' TERM
 
-# Keys are read one at a time while polling, so the terminal must not echo
-# them itself -- read -s only covers its own call, leaving every keystroke
-# during the FIFO poll to land on screen.
 raw_mode()    { stty -echo -icanon 2>/dev/null; }
 cooked_mode() { [ -n "$stty_saved" ] && stty "$stty_saved" 2>/dev/null; }
 
+# Cell size in pixels, so images can be sliced to exactly one row each.
+query_cell_size() {
+    local saved reply h w
+    saved="$(stty -g 2>/dev/null)" || return
+    stty -echo -icanon 2>/dev/null
+    printf '\e[16t' > /dev/tty 2>/dev/null
+    IFS= read -r -d t -t 0.4 reply < /dev/tty 2>/dev/null
+    stty "$saved" 2>/dev/null
+    h="${reply##*\[6;}"; h="${h%%;*}"
+    w="${reply##*;}"
+    case "$h" in ''|*[!0-9]*) return ;; esac
+    case "$w" in ''|*[!0-9]*) return ;; esac
+    cell_h="$h"
+    cell_w="$w"
+}
+
 rewrite() {
-    python3 "$LIB/mdnav_rewrite.py" "$current" "$work/render.md" "$work/links.json" "$SCHEME" \
-        || die "rewrite failed"
+    local mode=inline
+    [ "$SLICE" = 1 ] && mode=marker
+    python3 "$LIB/mdnav_rewrite.py" "$current" "$work/render.md" "$work/links.json" \
+        "$SCHEME" "$mode" "$work/images.json" || die "rewrite failed"
 }
 
 link_count() { python3 -c 'import json,sys;print(len(json.load(open(sys.argv[1]))))' "$work/links.json" 2>/dev/null || echo 0; }
 link_path()  { python3 -c 'import json,sys;d=json.load(open(sys.argv[1]));i=int(sys.argv[2])-1;print(d[i]["path"] if 0<=i<len(d) else "")' "$work/links.json" "$1" 2>/dev/null; }
+image_path() { python3 -c 'import json,sys;d=json.load(open(sys.argv[1]));i=int(sys.argv[2]);print(d[i] if 0<=i<len(d) else "")' "$work/images.json" "$1" 2>/dev/null; }
 
 list_links() {
     python3 - "$work/links.json" <<'PY'
@@ -144,28 +156,40 @@ for i, l in enumerate(links, 1):
 PY
 }
 
-# Render the whole document once into a buffer we hand out a screenful at a
-# time. --ansi is required because the output is redirected: without it
-# mdcat decides it is not talking to a terminal and drops colour and images.
 load_buffer() {
     rewrite
     cols="$(tput cols 2>/dev/null || echo 80)"
     rows="$(tput lines 2>/dev/null || echo 24)"
+
     local args=(--ansi --columns "$cols")
-    [ -n "$IMAGE_PROTOCOL" ] && args+=(--image-protocol "$IMAGE_PROTOCOL")
+    [ -n "$IMAGE_PROTOCOL" ] && [ "$SLICE" = 0 ] && args+=(--image-protocol "$IMAGE_PROTOCOL")
     "$MDCAT" "${args[@]}" "$work/render.md" > "$work/buffer.ansi" 2>/dev/null \
         || "$MDCAT" --ansi --columns "$cols" "$work/render.md" > "$work/buffer.ansi"
 
-    BUFFER_LINES=()
-    while IFS= read -r bufline; do
-        BUFFER_LINES+=("$bufline")
+    BUF=()
+    local line idx img strips
+    while IFS= read -r line; do
+        case "$line" in
+            *MDNAVIMG:*)
+                idx="${line#*MDNAVIMG:}"; idx="${idx%%:*}"; idx="${idx//[!0-9]/}"
+                img="$(image_path "$idx")"
+                strips=""
+                [ -n "$img" ] && [ -f "$img" ] && \
+                    strips="$(python3 "$LIB/mdnav_slice.py" "$img" "$cell_w" "$cell_h" "$cols" "$CACHE" 2>/dev/null)"
+                if [ -n "$strips" ] && [ -f "$strips" ]; then
+                    while IFS= read -r strip; do
+                        BUF+=("$strip")
+                    done < "$strips"
+                else
+                    BUF+=("[image]")
+                fi ;;
+            *) BUF+=("$line") ;;
+        esac
     done < "$work/buffer.ansi"
 
-    # mdcat queries the terminal while rendering; its replies are waiting
-    # on our stdin and are not keystrokes.
-    mdnav_drain_input
-
-    BUFFER_INDEX=0
+    local junk
+    while IFS= read -rsn1 -t 0.05 junk; do :; done
+    top=0
 }
 
 goto() {
@@ -174,8 +198,7 @@ goto() {
     [ -f "$target" ] || return 1
     case "$target" in
         *.md|*.markdown|*.mkd) ;;
-        *)  # Not markdown -- hand it to the desktop rather than render it.
-            if command -v wslview >/dev/null 2>&1; then wslview "$target"
+        *)  if command -v wslview >/dev/null 2>&1; then wslview "$target"
             elif command -v xdg-open >/dev/null 2>&1; then xdg-open "$target" >/dev/null 2>&1
             elif command -v open >/dev/null 2>&1; then open "$target" >/dev/null 2>&1
             fi
@@ -186,48 +209,71 @@ goto() {
     return 0
 }
 
-# One line, printed in place and erased when the reader moves on, so it
-# leaves nothing behind in the scrollback they will be scrolling through.
-prompt_line() {
-    local n text
+view_rows() { echo $(( rows - 1 )); }
+
+max_top() {
+    local avail; avail="$(view_rows)"
+    local m=$(( ${#BUF[@]} - avail ))
+    [ "$m" -lt 0 ] && m=0
+    echo "$m"
+}
+
+draw_line() {   # <screen row> <buffer index>
+    local srow="$1" i="$2"
+    printf '\e[%d;1H\e[K' "$srow"
+    [ "$i" -lt "${#BUF[@]}" ] && printf '%s' "${BUF[$i]}"
+}
+
+draw_all() {
+    local avail; avail="$(view_rows)"
+    local r=1
+    printf '\e[H\e[2J'
+    while [ "$r" -le "$avail" ]; do
+        draw_line "$r" $(( top + r - 1 ))
+        r=$(( r + 1 ))
+    done
+}
+
+# One line in or out costs one line of drawing, not a repaint: the region
+# scrolls and only the newly exposed row is written. This is what keeps a
+# screenful of image strips from being re-sent on every keystroke.
+scroll_down_one() {
+    local avail; avail="$(view_rows)"
+    printf '\e[%d;1H\n' "$avail"
+    draw_line "$avail" $(( top + avail - 1 ))
+}
+
+scroll_up_one() {
+    printf '\e[1;1H\eM'
+    draw_line 1 "$top"
+}
+
+status() {
+    local n pos total avail left right pad
     n="$(link_count)"
-    if mdnav_at_end; then
-        text=" ${current##*/}  end  ${n} link(s) · click a link"
-    else
-        text=" ${current##*/}  more  ${n} link(s) · space · click a link"
+    total="${#BUF[@]}"
+    avail="$(view_rows)"
+    if [ "$total" -le "$avail" ]; then pos="all"
+    elif [ "$top" -le 0 ]; then pos="top"
+    elif [ "$top" -ge "$(max_top)" ]; then pos="end"
+    else pos="$(( top * 100 / (total - avail) ))%"
     fi
-    [ ${#stack[@]} -gt 0 ] && text="$text · bksp back"
-    text="$text · l list · q quit "
-    printf '\e[7m%.*s\e[0m' "$cols" "$text"
-}
 
-erase_prompt() { printf '\r\e[K'; }
-
-# The wheel is only borrowed. Once the whole document is printed there is
-# nothing left to advance to, so give it back and let the terminal scroll
-# its own scrollback -- in both directions, without shift.
-release_mouse() {
-    [ "$mouse_on" = 1 ] || return 0
-    printf '\e[?1006l\e[?1000l'
-    mouse_on=0
+    left=" ${current##*/}  ${pos}  ${n} link(s)"
+    right="ctrl+click a link"
+    [ ${#stack[@]} -gt 0 ] && right="$right · bksp back"
+    right="$right · l list · q quit "
+    pad=$(( cols - ${#left} - ${#right} ))
+    printf '\e[%d;1H\e[K' "$rows"
+    if [ "$pad" -lt 1 ]; then
+        printf '\e[7m%-*.*s\e[0m' "$cols" "$cols" " $right"
+    else
+        printf '\e[7m%s%*s%s\e[0m' "$left" "$pad" "" "$right"
+    fi
 }
-# Off by default. Taking the wheel to advance the pager costs the wheel in
-# the other direction -- scrollback belongs to the terminal, and there is no
-# way to drive it from here -- and being able to scroll back over what you
-# just read matters more than advancing without reaching for a key.
-grab_mouse() {
-    [ "$mouse_on" = 0 ] || return 0
-    [ "${MDNAV_MOUSE:-0}" = 1 ] || return 0
-    printf '\e[?1000h\e[?1006h'
-    mouse_on=1
-}
-
-# Home and erase the screen, but NOT \e[3J -- which is what clear(1) sends
-# here, and it erases the scrollback along with it. The scrollback is where
-# everything already read lives, and is the whole point.
-clear_screen() { printf '\e[H\e[2J'; }
 
 if [ "$cat_mode" = 1 ]; then
+    SLICE=0
     rewrite
     if [ -n "$IMAGE_PROTOCOL" ]; then
         "$MDCAT" --image-protocol "$IMAGE_PROTOCOL" "$work/render.md" && exit 0
@@ -235,110 +281,101 @@ if [ "$cat_mode" = 1 ]; then
     exec "$MDCAT" "$work/render.md"
 fi
 
-# One reader per user. A second instance takes the FIFO over; the handler
-# always writes to this one path.
 [ -p "$FIFO" ] && rm -f "$FIFO"
 mkfifo -m 600 "$FIFO" || die "could not create $FIFO"
 owns_fifo=1
-# Held open read-write so reads never see EOF between clicks.
 exec 3<>"$FIFO"
 
 stty_saved="$(stty -g 2>/dev/null || true)"
 raw_mode
+query_cell_size
+
+# 1049: own the screen, so the view can start at the top and stay put.
+# 8452: leave the cursor beside a sixel rather than below it, so a strip
+#       occupies its row and nothing else.
+# 1007: the wheel arrives as arrow keys -- no mouse reporting, so the
+#       terminal goes on handling ctrl+click on hyperlinks itself.
+printf '\e[?1049h\e[?8452h\e[?1007h'
+alt=1
+printf '\e[?25l'
+
+resized=0
+trap 'resized=1' WINCH
 
 load_buffer
-clear_screen
-fresh=1
+# Scrolling region excludes the last row, so the status line stays put.
+printf '\e[1;%dr' "$(view_rows)"
+draw_all
+status
 
 while :; do
-    avail=$(( rows - 1 ))
-    [ "$avail" -lt 1 ] && avail=1
-
-    if [ "$fresh" = 1 ]; then
-        if [ "$all_mode" = 1 ]; then
-            while ! mdnav_at_end; do mdnav_print_chunk "$avail"; done
-        else
-            mdnav_print_chunk "$avail"
-        fi
-        fresh=0
+    if [ "$resized" = 1 ]; then
+        resized=0
+        keep="$top"
+        load_buffer
+        top="$keep"
+        [ "$top" -gt "$(max_top)" ] && top="$(max_top)"
+        printf '\e[1;%dr' "$(view_rows)"
+        draw_all
+        status
+        continue
     fi
 
-    if mdnav_at_end; then release_mouse; else grab_mouse; fi
-
-    prompt_line
-
-    action=""
-    while [ -z "$action" ]; do
-        # Already percent-decoded by mdnav-open -- decoding again would
-        # corrupt any path containing a literal % sequence.
-        # -t 0 asks whether anything is waiting without consuming it, so
-        # the click channel costs no latency when it is idle.
-        if read -t 0 -u 3 2>/dev/null && IFS= read -r -u 3 clicked; then
-            if goto "$clicked"; then action=nav; fi
-            continue
-        fi
-
-        mdnav_read_key || continue
-        case "$KEY" in
-            space|enter|pgdn|char:f)
-                if mdnav_at_end; then :; else action=more; fi ;;
-            down|char:j|wheel-down)
-                # A notch of the wheel is a few lines everywhere else; a
-                # whole screen per notch overshoots wildly.
-                if mdnav_at_end; then :; else action=lines; fi ;;
-            wheel-up)
-                # Scrollback belongs to the terminal, and shift+wheel still
-                # reaches it. Nothing sensible to do from here.
-                : ;;
-            char:G)
-                action=rest ;;
-            char:r)
-                action=reload ;;
-            backspace|char:H)
-                if [ ${#stack[@]} -gt 0 ]; then
-                    last=$(( ${#stack[@]} - 1 ))
-                    current="${stack[$last]}"; unset "stack[$last]"
-                    action=nav
-                fi ;;
-            char:l|char:L)
-                erase_prompt
-                cooked_mode
-                list_links
-                printf '\nfollow link #: '
-                IFS= read -r num
-                raw_mode
-                if [ -n "${num//[!0-9]/}" ] && goto "$(link_path "$num")"; then
-                    action=nav
-                else
-                    action=continue
-                fi ;;
-            char:q|char:Q)
-                action=quit ;;
-            ignore|escape)
-                : ;;
-        esac
-    done
-
-    erase_prompt
-    case "$action" in
-        quit) break ;;
-        more)
-            if [ "$page_mode" = 1 ]; then
-                mdnav_print_chunk "$avail"
-            else
-                # One pause, not many: hold at the top long enough to read
-                # the start, then print the rest and get out of the way.
-                while ! mdnav_at_end; do mdnav_print_chunk "$avail"; done
-            fi ;;
-        lines) mdnav_print_chunk "${MDNAV_WHEEL_LINES:-3}" ;;
-        rest)
-            while ! mdnav_at_end; do
-                mdnav_print_chunk "$avail"
-            done ;;
-        nav|reload)
+    if read -t 0 -u 3 2>/dev/null && IFS= read -r -u 3 clicked; then
+        if goto "$clicked"; then
             load_buffer
-            clear_screen
-            fresh=1 ;;
-        continue) : ;;
+            printf '\e[1;%dr' "$(view_rows)"
+            draw_all
+            status
+        fi
+        continue
+    fi
+
+    mdnav_read_key || continue
+    avail="$(view_rows)"
+    mt="$(max_top)"
+
+    case "$KEY" in
+        down|char:j)
+            if [ "$top" -lt "$mt" ]; then top=$(( top + 1 )); scroll_down_one; status; fi ;;
+        up|char:k)
+            if [ "$top" -gt 0 ]; then top=$(( top - 1 )); scroll_up_one; status; fi ;;
+        space|pgdn|char:f)
+            if [ "$top" -lt "$mt" ]; then
+                top=$(( top + avail )); [ "$top" -gt "$mt" ] && top="$mt"
+                draw_all; status
+            fi ;;
+        pgup|char:b)
+            if [ "$top" -gt 0 ]; then
+                top=$(( top - avail )); [ "$top" -lt 0 ] && top=0
+                draw_all; status
+            fi ;;
+        home|char:g)
+            if [ "$top" -ne 0 ]; then top=0; draw_all; status; fi ;;
+        end|char:G)
+            if [ "$top" -ne "$mt" ]; then top="$mt"; draw_all; status; fi ;;
+        char:r)
+            load_buffer; draw_all; status ;;
+        backspace|char:H)
+            if [ ${#stack[@]} -gt 0 ]; then
+                last=$(( ${#stack[@]} - 1 ))
+                current="${stack[$last]}"; unset "stack[$last]"
+                load_buffer; draw_all; status
+            fi ;;
+        char:l|char:L)
+            printf '\e[r\e[H\e[2J\e[?25h'
+            cooked_mode
+            list_links
+            printf '\nfollow link #: '
+            IFS= read -r num
+            raw_mode
+            printf '\e[?25l'
+            if [ -n "${num//[!0-9]/}" ] && goto "$(link_path "$num")"; then
+                load_buffer
+            fi
+            printf '\e[1;%dr' "$(view_rows)"
+            draw_all; status ;;
+        char:q|char:Q)
+            break ;;
     esac
 done
