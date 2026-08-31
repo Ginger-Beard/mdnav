@@ -195,9 +195,14 @@ passes the answer explicitly; `install.sh` offers to set
 Patterns are regular expressions, and a pattern typed in lower case matches
 either case -- the same bargain less strikes.
 
-Every match is marked in reverse video, as in less. `-g` marks only the match
-you are on, which is how less answers the question of which one that is; `-G`
-marks none. The status line counts your place either way, as `[2/7]`.
+Every match is marked in reverse video, as in less, and the one you are on is
+underlined as well, so it can be told from its neighbours. `-g` marks only the
+current match and leaves the rest unmarked, as less does; `-G` marks none. The
+status line counts your place either way, as `[2/7]`.
+
+Matches are counted by occurrence rather than by line, so a line containing the
+pattern twice is two stops for `n`, and `-g` marks the instance you are on
+rather than both.
 
 Matching happens against what is on screen as text, not the bytes making it
 up, so colour escapes, hyperlinks and images do not get in the way of a

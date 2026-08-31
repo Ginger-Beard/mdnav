@@ -110,8 +110,11 @@ SEARCH_PAT=""
 SEARCH_DIR=1
 SEARCH_MSG=""
 ACTIVE_MATCH=-1
+ACTIVE_OCC=-1
+ACTIVE_RENDER=""
 MATCH_POS=-1
-declare -a MATCHES=()
+declare -a MATCH_LINE=()
+declare -a MATCH_OCC=()
 top=0
 rows=24
 cols=80
@@ -228,9 +231,12 @@ load_hl() {
 # Runs SEARCH_PAT over the buffer, swapping in the copy with matches
 # highlighted. 0: matched. 1: nothing matched. 2: the pattern is not valid.
 apply_search() {
-    local out n
-    MATCHES=()
+    local out ln oc
+    MATCH_LINE=()
+    MATCH_OCC=()
     ACTIVE_MATCH=-1
+    ACTIVE_OCC=-1
+    ACTIVE_RENDER=""
     MATCH_POS=-1
     HLBUF=()
     if [ -z "$SEARCH_PAT" ]; then
@@ -238,10 +244,12 @@ apply_search() {
     fi
     if out="$(python3 "$LIB/mdnav_search.py" "$work/buffer.ansi" "$work/buffer.hl" \
                 "$SEARCH_PAT" 1 2>/dev/null)"; then
-        while IFS= read -r n; do
-            [ -n "$n" ] && MATCHES+=("$n")
+        while read -r ln oc; do
+            [ -n "$ln" ] || continue
+            MATCH_LINE+=("$ln")
+            MATCH_OCC+=("$oc")
         done <<< "$out"
-        if [ ${#MATCHES[@]} -gt 0 ]; then
+        if [ ${#MATCH_LINE[@]} -gt 0 ]; then
             [ "$HILITE" = none ] || load_hl "$work/buffer.hl"
             return 0
         fi
@@ -257,12 +265,29 @@ apply_search() {
 # cannot scroll past the last screenful, so several matches can share the
 # same top, and stepping by scroll offset gets stuck on the first of them.
 set_match() {
-    local pos="$1" len=${#MATCHES[@]}
+    local pos="$1" len=${#MATCH_LINE[@]}
     [ "$len" -gt 0 ] || return 1
     [ "$pos" -lt 0 ] && pos=$(( len - 1 ))
     [ "$pos" -ge "$len" ] && pos=0
     MATCH_POS="$pos"
-    ACTIVE_MATCH="${MATCHES[$pos]}"
+    ACTIVE_MATCH="${MATCH_LINE[$pos]}"
+    ACTIVE_OCC="${MATCH_OCC[$pos]}"
+    ACTIVE_RENDER=""
+    # The line holding the current match is rendered on its own, because
+    # which match you are on is a property of the occurrence, not the line:
+    # under -g only that one is marked, and otherwise it is the one wearing
+    # the underline while its neighbours keep plain reverse video.
+    local mode=""
+    case "$HILITE" in
+        current) mode=only ;;
+        all)     mode=emph ;;
+    esac
+    if [ -n "$mode" ]; then
+        if python3 "$LIB/mdnav_search.py" "$work/buffer.ansi" "$work/active.line" \
+               "$SEARCH_PAT" 1 "$ACTIVE_MATCH" "$ACTIVE_OCC" "$mode" 2>/dev/null; then
+            IFS= read -r ACTIVE_RENDER < "$work/active.line" || ACTIVE_RENDER=""
+        fi
+    fi
     top="$ACTIVE_MATCH"
     [ "$top" -gt "$MT" ] && top="$MT"
     return 0
@@ -271,19 +296,19 @@ set_match() {
 # Where a freshly typed search lands: the first match beyond the view.
 match_from_view() {
     local dir="$1" i idx=0 pos=-1
-    [ ${#MATCHES[@]} -gt 0 ] || return 1
+    [ ${#MATCH_LINE[@]} -gt 0 ] || return 1
     if [ "$dir" = 1 ]; then
-        for i in "${MATCHES[@]}"; do
+        for i in "${MATCH_LINE[@]}"; do
             if [ "$i" -gt "$top" ]; then pos="$idx"; break; fi
             idx=$(( idx + 1 ))
         done
         [ "$pos" -lt 0 ] && pos=0
     else
-        for i in "${MATCHES[@]}"; do
+        for i in "${MATCH_LINE[@]}"; do
             [ "$i" -lt "$top" ] && pos="$idx"
             idx=$(( idx + 1 ))
         done
-        [ "$pos" -lt 0 ] && pos=$(( ${#MATCHES[@]} - 1 ))
+        [ "$pos" -lt 0 ] && pos=$(( ${#MATCH_LINE[@]} - 1 ))
     fi
     set_match "$pos"
 }
@@ -291,7 +316,7 @@ match_from_view() {
 # n and N: one along the list, wrapping at either end.
 step_match() {
     local dir="$1"
-    [ ${#MATCHES[@]} -gt 0 ] || return 1
+    [ ${#MATCH_LINE[@]} -gt 0 ] || return 1
     if [ "$MATCH_POS" -lt 0 ]; then
         match_from_view "$dir"
         return $?
@@ -359,8 +384,9 @@ draw_line() {   # <screen row> <buffer index>
     local srow="$1" i="$2"
     printf '\e[%d;1H\e[K' "$srow"
     [ "$i" -lt "${#BUF[@]}" ] || return 0
-    if [ "$i" -lt "${#HLBUF[@]}" ] && \
-       { [ "$HILITE" = all ] || [ "$i" = "$ACTIVE_MATCH" ]; }; then
+    if [ "$i" = "$ACTIVE_MATCH" ] && [ -n "$ACTIVE_RENDER" ]; then
+        printf '%s' "$ACTIVE_RENDER"
+    elif [ "$HILITE" = all ] && [ "$i" -lt "${#HLBUF[@]}" ]; then
         printf '%s' "${HLBUF[$i]}"
     else
         printf '%s' "${BUF[$i]}"
@@ -405,10 +431,10 @@ status() {
     if [ -n "$SEARCH_MSG" ]; then
         left="$left  /${SEARCH_PAT}: ${SEARCH_MSG}"
     elif [ -n "$SEARCH_PAT" ] && [ "$MATCH_POS" -ge 0 ]; then
-        left="$left  /${SEARCH_PAT} [$(( MATCH_POS + 1 ))/${#MATCHES[@]}]"
+        left="$left  /${SEARCH_PAT} [$(( MATCH_POS + 1 ))/${#MATCH_LINE[@]}]"
         [ "$HILITE" = all ] || left="$left -${HILITE}"
     elif [ -n "$SEARCH_PAT" ]; then
-        left="$left  /${SEARCH_PAT} (${#MATCHES[@]})"
+        left="$left  /${SEARCH_PAT} (${#MATCH_LINE[@]})"
     fi
     right="ctrl+click a link"
     [ ${#stack[@]} -gt 0 ] && right="$right · :p back"
@@ -553,8 +579,9 @@ while :; do
             fi ;;
         escape)
             if [ -n "$SEARCH_PAT" ]; then
-                SEARCH_PAT=""; SEARCH_MSG=""; MATCHES=()
-                ACTIVE_MATCH=-1; MATCH_POS=-1
+                SEARCH_PAT=""; SEARCH_MSG=""
+                MATCH_LINE=(); MATCH_OCC=()
+                ACTIVE_MATCH=-1; ACTIVE_OCC=-1; ACTIVE_RENDER=""; MATCH_POS=-1
                 apply_search
                 draw_all; status
             fi ;;
