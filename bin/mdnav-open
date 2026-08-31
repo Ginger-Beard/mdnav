@@ -2,42 +2,73 @@
 # mdnav-open -- URL handler for mdnav:// links.
 #
 # Registered with the desktop (XDG on Linux, HKCU on Windows for WSL) as the
-# handler for the mdnav scheme. Hands the path to a running mdnav via its
-# FIFO; if nothing is listening, opens the file the ordinary way so a click
-# never silently does nothing.
+# handler for the mdnav scheme. Hands the path to the mdnav that rendered
+# the link, via that instance's FIFO.
+#
+# The URI carries the instance -- mdnav://<instance>/<path> -- so a click
+# goes back to the window it was clicked in, not to whichever mdnav started
+# most recently. If that one has gone, any other live mdnav takes it, and
+# failing that the file is opened the ordinary way, so a click never
+# silently does nothing.
 set -uo pipefail
 
-# Must match bin/mdnav exactly, and must not depend on the environment:
-# this runs from the desktop, not from the user's shell.
-FIFO="${MDNAV_FIFO:-/tmp/mdnav-$(id -u).fifo}"
 uri="${1:-}"
 [ -n "$uri" ] || exit 2
 
-# Decode and deliver in one step. Opening a FIFO for writing with O_NONBLOCK
-# fails immediately with ENXIO when no reader has it open, which is exactly
-# the test we want -- and unlike timeout(1) it exists everywhere.
-delivered=0
-path="$(python3 - "$uri" "$FIFO" <<'PY'
+path="$(python3 - "$uri" "${MDNAV_FIFO:-}" "$(id -u)" <<'PY'
+import glob
 import os
 import sys
 import urllib.parse
 
-uri, fifo = sys.argv[1], sys.argv[2]
-path = urllib.parse.unquote(uri.split("://", 1)[1] if "://" in uri else uri)
+uri, fifo_override, uid = sys.argv[1], sys.argv[2], sys.argv[3]
+
+rest = uri.split("://", 1)[1] if "://" in uri else uri
+instance, slash, tail = rest.partition("/")
+if not slash:
+    # No authority: the whole thing is the path.
+    instance, tail = "", rest
+path = urllib.parse.unquote("/" + tail if slash else tail)
 print(path)
 
-try:
-    fd = os.open(fifo, os.O_WRONLY | os.O_NONBLOCK)
-except OSError:
-    sys.exit(1)  # no reader, or no FIFO
-try:
-    os.write(fd, (path + "\n").encode("utf-8"))
-finally:
-    os.close(fd)
-PY
-)" && delivered=1
 
-[ "$delivered" = 1 ] && exit 0
+def deliver(fifo):
+    """True if a reader took it. Opening a FIFO write-only with O_NONBLOCK
+    fails with ENXIO when nobody is listening, which is exactly the test --
+    and unlike timeout(1) it exists everywhere."""
+    try:
+        fd = os.open(fifo, os.O_WRONLY | os.O_NONBLOCK)
+    except OSError:
+        return False
+    try:
+        os.write(fd, (path + "\n").encode("utf-8"))
+        return True
+    except OSError:
+        return False
+    finally:
+        os.close(fd)
+
+
+candidates = []
+if fifo_override:
+    candidates.append(fifo_override)
+if instance:
+    candidates.append("/tmp/mdnav-{}-{}.fifo".format(uid, instance))
+# Whoever else is listening, newest first.
+others = sorted(
+    glob.glob("/tmp/mdnav-{}-*.fifo".format(uid)),
+    key=lambda f: os.stat(f).st_mtime,
+    reverse=True,
+)
+candidates.extend(f for f in others if f not in candidates)
+
+for fifo in candidates:
+    if deliver(fifo):
+        sys.exit(0)
+sys.exit(1)
+PY
+)" && exit 0
+
 [ -n "$path" ] || exit 2
 
 # Nothing listening -- fall back to the desktop's own idea of how to open it.

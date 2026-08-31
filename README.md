@@ -101,8 +101,13 @@ cross that gap: a URL scheme.
 4. `mdnav-open` writes the path into a FIFO the running mdnav is reading, and
    mdnav renders it in place.
 
-If no mdnav is running, `mdnav-open` opens the file the ordinary way instead,
-so a click never silently does nothing.
+Each instance has its own FIFO and names itself in the links it renders --
+`mdnav://<instance>/<path>` -- so with several open at once, a click goes back
+to the window it was clicked in rather than to whichever started last.
+
+If that instance has since quit, any other live mdnav takes it; if none is
+running, `mdnav-open` opens the file the ordinary way. A click never silently
+does nothing.
 
 ### Images are sliced
 
@@ -199,8 +204,6 @@ Things that look like they should work, and don't:
 
 ## Limitations
 
-- One reader per user: a second `mdnav` takes over the FIFO, and clicks go to
-  the newest one.
 - Reference-style links (`[a][b]` with a separate definition) are not
   rewritten; inline `[a](b)` is.
 - Links to non-Markdown files are handed to the desktop rather than rendered.

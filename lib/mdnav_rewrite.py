@@ -28,6 +28,9 @@ URL_RE = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.-]*:")
 
 def main():
     src, out_md, out_links, scheme = sys.argv[1:5]
+    # Which mdnav rendered this. Carried in the URI so a click goes back to
+    # the window it was clicked in, however many are running.
+    instance = os.environ.get("MDNAV_INSTANCE", "")
     # "marker" leaves a placeholder line for each image, to be replaced with
     # sliced strips after rendering; "inline" lets mdcat draw them itself.
     image_mode = sys.argv[5] if len(sys.argv) > 5 else "inline"
@@ -64,7 +67,7 @@ def main():
         if path is None:
             return m.group(0)
         links.append({"label": label, "path": path})
-        uri = "{}://{}".format(scheme, quote(path))
+        uri = "{}://{}{}".format(scheme, instance, quote(path))
         return "[{}]({}{})".format(label, uri, title)
 
     text = IMAGE_RE.sub(fix_image, text)

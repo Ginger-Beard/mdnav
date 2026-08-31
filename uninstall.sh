@@ -13,7 +13,7 @@ echo "removing mdnav"
 rm -f "$bindir/mdnav" "$bindir/mdnav-open"
 say "removed symlinks from $bindir"
 
-rm -f "${MDNAV_FIFO:-/tmp/mdnav-$(id -u).fifo}"
+rm -f /tmp/mdnav-"$(id -u)"-*.fifo
 rm -rf "${XDG_CACHE_HOME:-$HOME/.cache}/mdnav"
 
 if is_wsl; then

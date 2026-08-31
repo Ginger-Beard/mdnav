@@ -14,7 +14,11 @@ set -uo pipefail
 VERSION=0.4.0
 MDCAT="${MDCAT_BIN:-mdcat}"
 SCHEME="${MDNAV_SCHEME:-mdnav}"
-FIFO="${MDNAV_FIFO:-/tmp/mdnav-$(id -u).fifo}"
+# One FIFO per instance, named in the links it renders, so several mdnavs
+# can run at once without stealing each other's clicks.
+INSTANCE="${MDNAV_INSTANCE:-$$}"
+export MDNAV_INSTANCE="$INSTANCE"
+FIFO="${MDNAV_FIFO:-/tmp/mdnav-$(id -u)-$INSTANCE.fifo}"
 CACHE="${XDG_CACHE_HOME:-$HOME/.cache}/mdnav"
 
 abspath() { python3 -c 'import os,sys;print(os.path.realpath(sys.argv[1]))' "$1"; }
@@ -273,7 +277,7 @@ if [ "$cat_mode" = 1 ]; then
     exec "$MDCAT" "$work/render.md"
 fi
 
-[ -p "$FIFO" ] && rm -f "$FIFO"
+rm -f "$FIFO"
 mkfifo -m 600 "$FIFO" || die "could not create $FIFO"
 owns_fifo=1
 exec 3<>"$FIFO"
