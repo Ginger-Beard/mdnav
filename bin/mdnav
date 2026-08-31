@@ -45,7 +45,7 @@ usage: mdnav [options] <file.md>
 
 keys:
   up/down, k/j           scroll a line
-  wheel                  scroll, as far as your system says a notch goes
+  wheel                  scroll 3 lines (MDNAV_WHEEL_LINES)
   space/PgDn, u/PgUp     scroll a page
   g / G                  top / bottom
   ctrl+click             follow a link
@@ -119,29 +119,6 @@ trap 'cleanup; exit 143' TERM
 
 raw_mode()    { stty -echo -icanon 2>/dev/null; }
 cooked_mode() { [ -n "$stty_saved" ] && stty "$stty_saved" 2>/dev/null; }
-
-# How far one notch of the wheel should move, following the platform where
-# it says. Windows records it; X11 and macOS have no equivalent -- toolkits
-# and terminals each decide, and three is what they overwhelmingly pick.
-#
-# Alternate scroll would avoid needing this, by letting the terminal
-# translate notches into arrow keys itself. Windows Terminal sends exactly
-# one arrow per notch regardless of the setting, so the preference is lost
-# on the way through.
-wheel_lines() {
-    local v
-    if [ -n "${MDNAV_WHEEL_LINES:-}" ]; then printf '%s' "$MDNAV_WHEEL_LINES"; return; fi
-    if [ -n "${WSL_DISTRO_NAME:-}" ] || grep -qi microsoft /proc/version 2>/dev/null; then
-        v="$(reg.exe query 'HKCU\Control Panel\Desktop' /v WheelScrollLines 2>/dev/null \
-             | tr -d '\r' | awk '/WheelScrollLines/{print $NF}')"
-        # -1 is Windows for "a screen at a time".
-        case "$v" in
-            ''|*[!0-9-]*) ;;
-            *) printf '%s' "$v"; return ;;
-        esac
-    fi
-    printf '3'
-}
 
 # Cell size in pixels, so images can be sliced to exactly one row each.
 query_cell_size() {
@@ -323,7 +300,12 @@ query_cell_size
 #       and loses the setting. Terminals still handle ctrl+click on
 #       hyperlinks while reporting is on; MDNAV_MOUSE=0 falls back to
 #       alternate scroll (1007) for any that do not.
-WHEEL_LINES="$(wheel_lines)"
+# Three lines per notch: what toolkits and terminals overwhelmingly use.
+# Windows records a preference for this and X11 and macOS do not, but
+# reading it meant an interop call on every launch for a value that is
+# almost always three anyway. MDNAV_WHEEL_LINES overrides; -1 means a
+# screen at a time.
+WHEEL_LINES="${MDNAV_WHEEL_LINES:-3}"
 if [ "${MDNAV_MOUSE:-1}" = 1 ]; then
     printf '\e[?1049h\e[?8452h\e[?1000h\e[?1006h'
 else

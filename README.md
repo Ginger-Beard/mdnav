@@ -17,7 +17,7 @@ mdnav README.md
 
 ```
 up/down, k/j           scroll a line
-wheel                  scroll, as far as your system says a notch goes
+wheel                  scroll 3 lines (MDNAV_WHEEL_LINES)
 space/PgDn, u/PgUp     scroll a page
 g / G                  top / bottom
 ctrl+click             follow a link
@@ -174,7 +174,7 @@ the round trip.
 | `MDNAV_FIFO` | where the click handler and the reader meet |
 | `MDNAV_INSTANCE` | this instance's name in the links it renders |
 | `MDNAV_SCHEME` | URL scheme, if `mdnav` collides with something |
-| `MDNAV_WHEEL_LINES` | lines per wheel notch; `-1` for a screen |
+| `MDNAV_WHEEL_LINES` | lines per wheel notch (default 3); `-1` for a screen |
 | `MDNAV_MOUSE` | `0` to leave the wheel to the terminal |
 | `MDNAV_KEY_POLL` | key poll interval, in seconds |
 | `MDNAV_DEBUG` | write an execution trace to this file |
@@ -186,10 +186,11 @@ passes the answer explicitly; `install.sh` offers to set
 
 ### The wheel
 
-One notch moves as far as the platform says it should: on Windows that is
-`HKCU\Control Panel\Desktop\WheelScrollLines`, and elsewhere three, since
-neither X11 nor macOS expresses such a setting and three is what toolkits and
-terminals overwhelmingly pick. `MDNAV_WHEEL_LINES` overrides it.
+One notch moves three lines, which is what toolkits and terminals
+overwhelmingly use. Windows records a preference for this and X11 and macOS do
+not, so honouring it would have meant a platform-specific lookup on every
+launch for a value that is almost always three. `MDNAV_WHEEL_LINES` overrides
+it; `-1` means a screen at a time.
 
 Reading wheel events at all means turning on mouse reporting. Alternate scroll
 (`\e[?1007h`) would avoid that by having the terminal send arrow keys instead,
