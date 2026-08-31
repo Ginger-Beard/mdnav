@@ -101,6 +101,8 @@ LINK_COUNT=0
 SEARCH_PAT=""
 SEARCH_DIR=1
 SEARCH_MSG=""
+ACTIVE_MATCH=-1
+MATCH_POS=-1
 declare -a MATCHES=()
 top=0
 rows=24
@@ -212,6 +214,8 @@ load_lines() {
 apply_search() {
     local out n
     MATCHES=()
+    ACTIVE_MATCH=-1
+    MATCH_POS=-1
     if [ -z "$SEARCH_PAT" ]; then
         load_lines "$work/buffer.ansi"
         return 0
@@ -234,22 +238,39 @@ apply_search() {
 
 # Next match in <dir> from where we are, wrapping round the ends.
 jump_to_match() {
-    local dir="$1" i target=-1
+    local dir="$1" i target=-1 pos=-1 idx=0
     [ ${#MATCHES[@]} -gt 0 ] || return 1
     if [ "$dir" = 1 ]; then
         for i in "${MATCHES[@]}"; do
-            if [ "$i" -gt "$top" ]; then target="$i"; break; fi
+            if [ "$i" -gt "$top" ]; then target="$i"; pos="$idx"; break; fi
+            idx=$(( idx + 1 ))
         done
-        [ "$target" -lt 0 ] && target="${MATCHES[0]}"
+        if [ "$target" -lt 0 ]; then target="${MATCHES[0]}"; pos=0; fi
     else
         for i in "${MATCHES[@]}"; do
-            [ "$i" -lt "$top" ] && target="$i"
+            if [ "$i" -lt "$top" ]; then target="$i"; pos="$idx"; fi
+            idx=$(( idx + 1 ))
         done
-        [ "$target" -lt 0 ] && target="${MATCHES[$(( ${#MATCHES[@]} - 1 ))]}"
+        if [ "$target" -lt 0 ]; then
+            pos=$(( ${#MATCHES[@]} - 1 ))
+            target="${MATCHES[$pos]}"
+        fi
     fi
+    # Which match is current, before the top is clamped -- the line stays on
+    # screen either way, and this is what gets the brighter marking.
+    ACTIVE_MATCH="$target"
+    MATCH_POS="$pos"
     [ "$target" -gt "$MT" ] && target="$MT"
     top="$target"
     return 0
+}
+
+# The match you are on, told apart from the rest. Every match is already
+# marked with reverse video; the current one adds underline, which reads as
+# different without disturbing whatever colour the line already had.
+active_line() {
+    local l="${1//$'\e[7m'/$'\e[7;4m'}"
+    printf '%s' "${l//$'\e[27m'/$'\e[27;24m'}"
 }
 
 # Typing a pattern is a line edit, so the terminal does it.
@@ -307,7 +328,12 @@ recalc() {
 draw_line() {   # <screen row> <buffer index>
     local srow="$1" i="$2"
     printf '\e[%d;1H\e[K' "$srow"
-    [ "$i" -lt "${#BUF[@]}" ] && printf '%s' "${BUF[$i]}"
+    [ "$i" -lt "${#BUF[@]}" ] || return 0
+    if [ "$i" = "$ACTIVE_MATCH" ]; then
+        active_line "${BUF[$i]}"
+    else
+        printf '%s' "${BUF[$i]}"
+    fi
 }
 
 draw_all() {
@@ -347,6 +373,8 @@ status() {
     left=" ${current##*/}  ${pos}  ${n} link(s)"
     if [ -n "$SEARCH_MSG" ]; then
         left="$left  /${SEARCH_PAT}: ${SEARCH_MSG}"
+    elif [ -n "$SEARCH_PAT" ] && [ "$MATCH_POS" -ge 0 ]; then
+        left="$left  /${SEARCH_PAT} [$(( MATCH_POS + 1 ))/${#MATCHES[@]}]"
     elif [ -n "$SEARCH_PAT" ]; then
         left="$left  /${SEARCH_PAT} (${#MATCHES[@]})"
     fi
@@ -494,6 +522,7 @@ while :; do
         escape)
             if [ -n "$SEARCH_PAT" ]; then
                 SEARCH_PAT=""; SEARCH_MSG=""; MATCHES=()
+                ACTIVE_MATCH=-1; MATCH_POS=-1
                 apply_search
                 draw_all; status
             fi ;;
