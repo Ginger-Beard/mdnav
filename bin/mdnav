@@ -64,13 +64,20 @@ declare -a stack=()
 
 work="$(mktemp -d)"
 owns_fifo=0
+stty_saved=""
 cleanup() {
     rm -rf "$work"
     [ "$owns_fifo" = 1 ] && rm -f "$FIFO"
     printf '\e[?25h'
-    stty echo 2>/dev/null
+    [ -n "$stty_saved" ] && stty "$stty_saved" 2>/dev/null
 }
 trap cleanup EXIT INT TERM
+
+# Keys are read one at a time while polling, so the terminal must not echo
+# them itself -- read -s only covers its own call, leaving every keystroke
+# during the FIFO poll to land on screen.
+raw_mode()    { stty -echo -icanon 2>/dev/null; }
+cooked_mode() { [ -n "$stty_saved" ] && stty "$stty_saved" 2>/dev/null; }
 
 render() {
     local md="$work/render.md" links="$work/links.json"
@@ -118,10 +125,20 @@ goto() {
 }
 
 status() {
-    local n; n="$(link_count)"
-    printf '\e[7m %s \e[0m  %s link(s)  [click' "${current##*/}" "$n"
-    [ ${#stack[@]} -gt 0 ] && printf ' · b=back'
-    printf ' · l=list · r=reload · q=quit] '
+    local n width left right pad
+    n="$(link_count)"
+    width="$(tput cols 2>/dev/null || echo 80)"
+    left=" ${current##*/}  ${n} link(s)"
+    right="l list"
+    [ ${#stack[@]} -gt 0 ] && right="$right · b back"
+    right="$right · r reload · q quit "
+    pad=$(( width - ${#left} - ${#right} ))
+    if [ "$pad" -lt 1 ]; then
+        # Too narrow for both halves; keep the keys, they are the useful part.
+        printf '\e[7m%-*.*s\e[0m' "$width" "$width" " $right"
+    else
+        printf '\e[7m%s%*s%s\e[0m' "$left" "$pad" "" "$right"
+    fi
 }
 
 if [ "$cat_mode" = 1 ]; then
@@ -137,10 +154,14 @@ owns_fifo=1
 # Held open read-write so reads never see EOF between clicks.
 exec 3<>"$FIFO"
 
+stty_saved="$(stty -g 2>/dev/null || true)"
+raw_mode
+
 while :; do
     render
     echo
     status
+    printf '\e[?25l'
 
     action=""
     while [ -z "$action" ]; do
@@ -158,14 +179,18 @@ while :; do
                      fi ;;
                 r|R) action=nav ;;
                 l|L)
-                    echo; list_links
+                    # Typing a number is a normal line edit, so hand the
+                    # terminal back its usual behaviour for the duration.
+                    printf '\e[?25h\n'
+                    cooked_mode
+                    list_links
                     printf 'follow link #: '
-                    stty echo 2>/dev/null
                     IFS= read -r num
+                    raw_mode
                     if [ -n "${num//[!0-9]/}" ]; then
                         goto "$(link_path "$num")" && action=nav
                     fi
-                    [ -z "$action" ] && { echo; status; } ;;
+                    [ -z "$action" ] && { status; printf '\e[?25l'; } ;;
             esac
         fi
     done
