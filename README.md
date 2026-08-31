@@ -94,7 +94,7 @@ terminals have no way to do that. So mdnav borrows the one channel that does
 cross that gap: a URL scheme.
 
 1. Before rendering, mdnav rewrites local links in a temp copy of the document
-   from `./OTHER.md` to `mdnav:///abs/path/OTHER.md`.
+   from `./OTHER.md` to `mdnav://<instance>/abs/path/OTHER.md`.
 2. mdcat renders that copy and emits each link as an OSC 8 hyperlink — the
    terminal owns the hit-testing from there.
 3. Clicking hands `mdnav://…` to the desktop, which routes it to `mdnav-open`.
@@ -169,6 +169,7 @@ the round trip.
 | `MDCAT_BIN` | mdcat to run, if not the one on `PATH` |
 | `MDNAV_IMAGE_PROTOCOL` | force `sixel`, `kitty`, `iterm2`, or `none` |
 | `MDNAV_FIFO` | where the click handler and the reader meet |
+| `MDNAV_INSTANCE` | this instance's name in the links it renders |
 | `MDNAV_SCHEME` | URL scheme, if `mdnav` collides with something |
 | `MDNAV_KEY_POLL` | key poll interval, in seconds |
 | `MDNAV_DEBUG` | write an execution trace to this file |
