@@ -24,6 +24,13 @@ LIB="$here/../lib"
 
 die() { printf 'mdnav: %s\n' "$*" >&2; exit 1; }
 
+# MDNAV_DEBUG=/path/to/log turns on a full trace, kept off the screen.
+if [ -n "${MDNAV_DEBUG:-}" ]; then
+    exec 4>>"$MDNAV_DEBUG"
+    BASH_XTRACEFD=4
+    set -x
+fi
+
 usage() {
     cat <<EOF
 mdnav $VERSION -- mdcat, with links you can click.
@@ -139,6 +146,11 @@ load_buffer() {
     while IFS= read -r bufline; do
         BUFFER_LINES+=("$bufline")
     done < "$work/buffer.ansi"
+
+    # mdcat queries the terminal while rendering; its replies are waiting
+    # on our stdin and are not keystrokes.
+    mdnav_drain_input
+
     top=0
     tops=()
 }
@@ -295,6 +307,8 @@ while :; do
                 fi ;;
             char:q|char:Q)
                 action=quit ;;
+            ignore|escape)
+                : ;;
         esac
     done
 

@@ -3,37 +3,54 @@
 # Terminals send arrows and page keys as escape sequences, so a bare
 # one-character read cannot tell them from a literal Escape. The follow-up
 # reads use a short timeout for that reason.
+#
+# Replies to terminal queries arrive on the same input, and mdcat issues
+# such queries while rendering images. Those are recognised and discarded
+# rather than mistaken for keys -- a cursor-position reply like \e[66;1R
+# starts identically to a PgDn.
 
 mdnav_read_key() {
     KEY=""
-    local c c2 c3 junk
+    local c c2 ch seq
     IFS= read -rsn1 -t 0.15 c || return 1
 
-    if [ "$c" = $'\e' ]; then
-        IFS= read -rsn1 -t 0.05 c2 || { KEY="escape"; return 0; }
-        if [ "$c2" != "[" ] && [ "$c2" != "O" ]; then
-            KEY="escape"; return 0
-        fi
-        IFS= read -rsn1 -t 0.05 c3 || { KEY="escape"; return 0; }
-        case "$c3" in
-            A) KEY="up" ;;
-            B) KEY="down" ;;
-            C) KEY="right" ;;
-            D) KEY="left" ;;
-            H) KEY="home" ;;
-            F) KEY="end" ;;
-            5) IFS= read -rsn1 -t 0.05 junk; KEY="pgup" ;;
-            6) IFS= read -rsn1 -t 0.05 junk; KEY="pgdn" ;;
-            *) KEY="escape" ;;
+    if [ "$c" != $'\e' ]; then
+        case "$c" in
+            " ")            KEY="space" ;;
+            $'\x7f'|$'\b')  KEY="backspace" ;;
+            "")             KEY="enter" ;;
+            *)              KEY="char:$c" ;;
         esac
         return 0
     fi
 
-    case "$c" in
-        " ")      KEY="space" ;;
-        $'\x7f'|$'\b') KEY="backspace" ;;
-        "")       KEY="enter" ;;
-        *)        KEY="char:$c" ;;
+    IFS= read -rsn1 -t 0.05 c2 || { KEY="escape"; return 0; }
+    if [ "$c2" != "[" ] && [ "$c2" != "O" ]; then
+        KEY="escape"
+        return 0
+    fi
+
+    # Read to the sequence's final byte instead of guessing from the first,
+    # so a query reply can be told apart from a key.
+    seq=""
+    while IFS= read -rsn1 -t 0.05 ch; do
+        seq="$seq$ch"
+        case "$ch" in
+            [A-Za-z~]) break ;;
+        esac
+    done
+
+    case "$seq" in
+        A)    KEY="up" ;;
+        B)    KEY="down" ;;
+        C)    KEY="right" ;;
+        D)    KEY="left" ;;
+        H)    KEY="home" ;;
+        F)    KEY="end" ;;
+        5~)   KEY="pgup" ;;
+        6~)   KEY="pgdn" ;;
+        *R|*t|*c) KEY="ignore" ;;   # cursor position, size, device attributes
+        *)    KEY="escape" ;;
     esac
     return 0
 }

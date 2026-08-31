@@ -6,17 +6,30 @@
 # lines, and after any line carrying image data, ask the terminal where the
 # cursor actually ended up (CSI 6n).
 
-# Row the cursor is on right now, 1-based.
+# Sets CURSOR_ROW to the cursor's current row, 1-based.
+#
+# Deliberately not `CURSOR_ROW=$(...)`: inside a command substitution the
+# query would be written to the capture pipe rather than the terminal, and
+# no reply would ever come back.
 mdnav_cursor_row() {
     local reply r
-    printf '\e[6n'
-    IFS= read -r -d R -t 0.4 reply 2>/dev/null || { printf '%s' "${LINES_TOTAL:-1}"; return; }
+    CURSOR_ROW=0
+    printf '\e[6n' > /dev/tty 2>/dev/null || return 1
+    IFS= read -r -d R -t 0.4 reply < /dev/tty 2>/dev/null || return 1
     r="${reply#*\[}"
     r="${r%%;*}"
     case "$r" in
-        ''|*[!0-9]*) printf '1' ;;
-        *) printf '%s' "$r" ;;
+        ''|*[!0-9]*) return 1 ;;
+        *) CURSOR_ROW="$r"; return 0 ;;
     esac
+}
+
+# Swallow anything the terminal has already sent that we did not ask for --
+# mdcat queries the terminal itself when rendering images, and those replies
+# arrive on our stdin, where they would otherwise be read as keystrokes.
+mdnav_drain_input() {
+    local junk
+    while IFS= read -rsn1 -t 0.05 junk; do :; done
 }
 
 # mdnav_draw_page <start-index> <rows-available>
@@ -31,7 +44,13 @@ mdnav_draw_page() {
         line="${BUFFER_LINES[$i]}"
         printf '%s\n' "$line"
         case "$line" in
-            *$'\eP'*|*$'\e_G'*) row="$(mdnav_cursor_row)" ;;
+            *$'\eP'*|*$'\e_G'*)
+                # Only the terminal knows how tall that turned out.
+                if mdnav_cursor_row; then
+                    row="$CURSOR_ROW"
+                else
+                    row=$(( row + 1 ))
+                fi ;;
             *) row=$(( row + 1 )) ;;
         esac
         i=$(( i + 1 ))
