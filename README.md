@@ -2,7 +2,7 @@
 
 `mdcat`, with links you can click.
 
-[mdcat](https://github.com/swsnr/mdcat) renders Markdown in the terminal
+[mdcat](https://github.com/BIRSAx2/mdcat) renders Markdown in the terminal
 beautifully, images included. What it cannot do is let you *follow* a link to
 another local file: activating one hands it to your desktop, which opens it in
 some other application, in some other window.
@@ -75,7 +75,7 @@ cargo install mdcat         # anywhere with a Rust toolchain
 ```
 
 Prebuilt binaries are on [mdcat's releases
-page](https://github.com/swsnr/mdcat/releases). It is not packaged for Debian
+page](https://github.com/BIRSAx2/mdcat/releases). It is not packaged for Debian
 or Ubuntu.
 
 Building with `cargo` on Debian/Ubuntu needs the OpenSSL headers first,
@@ -118,7 +118,9 @@ lay out what it cannot measure — which is also why piping mdcat to `less`
 fails: less counts a 79-row image as one line and draws the rest over the text.
 
 So mdnav cuts each image into strips exactly one text row tall, one sixel
-escape each, before rendering. Every line in the buffer is then exactly one
+escape each. It does this to mdcat's *output* rather than its input, which
+also catches Mermaid diagrams and rendered maths -- mdcat draws those as
+images although nothing in the Markdown says so. Every line in the buffer is then exactly one
 screen row: layout is arithmetic again, and a half-scrolled image is simply the
 strips that fall inside the window.
 
@@ -215,5 +217,5 @@ Things that look like they should work, and don't:
 
 MIT — see [LICENSE](LICENSE).
 
-mdnav runs [mdcat](https://github.com/swsnr/mdcat) (MPL-2.0) and ImageMagick as
+mdnav runs [mdcat](https://github.com/BIRSAx2/mdcat) (MPL-2.0) and ImageMagick as
 separate programs and includes no code from either.

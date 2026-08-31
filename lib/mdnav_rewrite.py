@@ -38,7 +38,6 @@ def main():
     srcdir = os.path.dirname(os.path.realpath(src))
     text = open(src, encoding="utf-8").read()
     links = []
-    images = []
 
     def local_path(target):
         """Absolute path for a local target, or None if it isn't one."""
@@ -54,11 +53,6 @@ def main():
         path = local_path(target)
         if path is None:
             return m.group(0)
-        if image_mode == "marker":
-            # A paragraph of its own, so it renders as one line that can be
-            # swapped for the image's strips afterwards.
-            images.append(path)
-            return "\n\nMDNAVIMG:{}:\n\n".format(len(images) - 1)
         return "![{}]({}{})".format(alt, path, title)
 
     def fix_link(m):
@@ -77,9 +71,6 @@ def main():
         f.write(text)
     with open(out_links, "w", encoding="utf-8") as f:
         json.dump(links, f)
-    if out_images:
-        with open(out_images, "w", encoding="utf-8") as f:
-            json.dump(images, f)
 
 
 if __name__ == "__main__":

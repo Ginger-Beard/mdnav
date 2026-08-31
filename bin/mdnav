@@ -136,15 +136,12 @@ query_cell_size() {
 }
 
 rewrite() {
-    local mode=inline
-    [ "$SLICE" = 1 ] && mode=marker
     python3 "$LIB/mdnav_rewrite.py" "$current" "$work/render.md" "$work/links.json" \
-        "$SCHEME" "$mode" "$work/images.json" || die "rewrite failed"
+        "$SCHEME" || die "rewrite failed"
 }
 
 link_count() { python3 -c 'import json,sys;print(len(json.load(open(sys.argv[1]))))' "$work/links.json" 2>/dev/null || echo 0; }
 link_path()  { python3 -c 'import json,sys;d=json.load(open(sys.argv[1]));i=int(sys.argv[2])-1;print(d[i]["path"] if 0<=i<len(d) else "")' "$work/links.json" "$1" 2>/dev/null; }
-image_path() { python3 -c 'import json,sys;d=json.load(open(sys.argv[1]));i=int(sys.argv[2]);print(d[i] if 0<=i<len(d) else "")' "$work/images.json" "$1" 2>/dev/null; }
 
 list_links() {
     python3 - "$work/links.json" <<'PY'
@@ -166,29 +163,24 @@ load_buffer() {
     rows="$(tput lines 2>/dev/null || echo 24)"
 
     local args=(--ansi --columns "$cols")
-    [ -n "$IMAGE_PROTOCOL" ] && [ "$SLICE" = 0 ] && args+=(--image-protocol "$IMAGE_PROTOCOL")
+    [ -n "$IMAGE_PROTOCOL" ] && args+=(--image-protocol "$IMAGE_PROTOCOL")
     "$MDCAT" "${args[@]}" "$work/render.md" > "$work/buffer.ansi" 2>/dev/null \
         || "$MDCAT" --ansi --columns "$cols" "$work/render.md" > "$work/buffer.ansi"
 
+    # Cut every image down to strips one row tall. Done on the rendered
+    # output rather than the source, so it catches Mermaid diagrams and
+    # rendered maths too -- mdcat draws those as images although nothing in
+    # the Markdown says so.
+    if [ "$SLICE" = 1 ] && \
+       python3 "$LIB/mdnav_slice.py" "$work/buffer.ansi" "$work/sliced.ansi" \
+           "$cell_h" "$CACHE" 2>/dev/null; then
+        mv "$work/sliced.ansi" "$work/buffer.ansi"
+    fi
+
     BUF=()
-    local line idx img strips
+    local line
     while IFS= read -r line; do
-        case "$line" in
-            *MDNAVIMG:*)
-                idx="${line#*MDNAVIMG:}"; idx="${idx%%:*}"; idx="${idx//[!0-9]/}"
-                img="$(image_path "$idx")"
-                strips=""
-                [ -n "$img" ] && [ -f "$img" ] && \
-                    strips="$(python3 "$LIB/mdnav_slice.py" "$img" "$cell_w" "$cell_h" "$cols" "$CACHE" 2>/dev/null)"
-                if [ -n "$strips" ] && [ -f "$strips" ]; then
-                    while IFS= read -r strip; do
-                        BUF+=("$strip")
-                    done < "$strips"
-                else
-                    BUF+=("[image]")
-                fi ;;
-            *) BUF+=("$line") ;;
-        esac
+        BUF+=("$line")
     done < "$work/buffer.ansi"
 
     local junk
