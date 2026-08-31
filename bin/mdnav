@@ -288,7 +288,9 @@ set_match() {
     if [ -n "$mode" ]; then
         if python3 "$LIB/mdnav_search.py" "$work/buffer.ansi" "$work/active.line" \
                "$SEARCH_PAT" 1 "$ACTIVE_MATCH" "$ACTIVE_OCC" "$mode" 2>/dev/null; then
-            IFS= read -r ACTIVE_RENDER < "$work/active.line" || ACTIVE_RENDER=""
+            # read reports failure at EOF when the file ends without a
+            # newline, which this one does -- the value is still assigned.
+            IFS= read -r ACTIVE_RENDER < "$work/active.line" || :
         fi
     fi
     top="$ACTIVE_MATCH"
