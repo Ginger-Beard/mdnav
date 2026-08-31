@@ -346,20 +346,59 @@ read_key_wait() {
     return 0
 }
 
-# Typing a pattern is a line edit, so the terminal does it.
+# The prompt is edited here rather than by the terminal, because less's
+# behaviour is not the terminal's: escape abandons the search, and so does
+# rubbing out the last character of it. Returns 1 when abandoned.
 read_pattern() {
-    printf '\e[%d;1H\e[K%s' "$rows" "$1"
+    local prompt="$1" buf="" c seq
+    PATTERN=""
     printf '\e[?25h'
-    cooked_mode
-    IFS= read -r PATTERN
-    raw_mode
-    printf '\e[?25l'
+    while :; do
+        printf '\e[%d;1H\e[K%s%s' "$rows" "$prompt" "$buf"
+        IFS= read -rsn1 c || { printf '\e[?25l'; return 1; }
+        case "$c" in
+            "")               # return: the delimiter is stripped, leaving nothing
+                PATTERN="$buf"; printf '\e[?25l'; return 0 ;;
+            $'\x03')           # interrupt
+                printf '\e[?25l'; return 1 ;;
+            $'\e')
+                # Escape itself abandons the search -- but the terminal also
+                # sends escape sequences unbidden while the prompt is up:
+                # wheel events, arrow keys. Those get swallowed, not typed
+                # into the pattern and not mistaken for the key.
+                if IFS= read -rsn1 -t 0.02 seq; then
+                    if [ "$seq" = "[" ] || [ "$seq" = "O" ]; then
+                        while IFS= read -rsn1 -t 0.02 seq; do
+                            case "$seq" in [A-Za-z~]) break ;; esac
+                        done
+                    fi
+                    continue
+                fi
+                printf '\e[?25l'; return 1 ;;
+            $'\x7f'|$'\b')
+                # Backing out of an empty pattern abandons it, as in less.
+                if [ -z "$buf" ]; then printf '\e[?25l'; return 1; fi
+                buf="${buf%?}" ;;
+            $'\x15')           # ctrl-u: start again
+                buf="" ;;
+            $'\x17')           # ctrl-w: back one word
+                buf="${buf% *}" ;;
+            *)
+                buf="$buf$c" ;;
+        esac
+    done
 }
 
 run_search() {   # <direction> <prompt>
     local dir="$1" rc
-    read_pattern "$2"
-    SEARCH_PAT="$PATTERN"
+    if ! read_pattern "$2"; then
+        SEARCH_MSG=""
+        return 0
+    fi
+    # An empty pattern repeats the last one, which is what less does with a
+    # bare / and return.
+    [ -n "$PATTERN" ] && SEARCH_PAT="$PATTERN"
+    [ -n "$SEARCH_PAT" ] || return 0
     SEARCH_DIR="$dir"
     apply_search; rc=$?
     case "$rc" in

@@ -192,6 +192,9 @@ passes the answer explicitly; `install.sh` offers to set
 ### Search
 
 `/` and `?` search forward and backward, `n` and `N` repeat, `esc` clears.
+At the prompt, backspace rubs out, and rubbing out the last character
+abandons the search, as does escape; ctrl-u clears it and ctrl-w takes back a
+word. A bare `/` repeats the previous pattern.
 Patterns are regular expressions, and a pattern typed in lower case matches
 either case -- the same bargain less strikes.
 
