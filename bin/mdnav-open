@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+# mdnav-open -- URL handler for mdnav:// links.
+#
+# Registered with the desktop (XDG on Linux, HKCU on Windows for WSL) as the
+# handler for the mdnav scheme. Hands the path to a running mdnav via its
+# FIFO; if nothing is listening, opens the file the ordinary way so a click
+# never silently does nothing.
+set -uo pipefail
+
+FIFO="${MDNAV_FIFO:-${XDG_RUNTIME_DIR:-/tmp}/mdnav-$(id -u).fifo}"
+uri="${1:-}"
+[ -n "$uri" ] || exit 2
+
+path="$(python3 -c 'import sys,urllib.parse as u
+s = sys.argv[1]
+print(u.unquote(s.split("://", 1)[1] if "://" in s else s))' "$uri" 2>/dev/null)"
+
+[ -n "$path" ] || exit 2
+
+# Guarded write: opening a FIFO with no reader blocks forever, and these run
+# detached from any console, so an unguarded write would pile up invisible
+# processes -- one per click.
+if [ -p "$FIFO" ]; then
+    if timeout 1 bash -c 'printf "%s\n" "$1" > "$2"' _ "$path" "$FIFO" 2>/dev/null; then
+        exit 0
+    fi
+fi
+
+# Nothing listening -- fall back to the desktop's own idea of how to open it.
+if command -v wslview >/dev/null 2>&1; then
+    exec wslview "$path"
+elif command -v xdg-open >/dev/null 2>&1; then
+    exec xdg-open "$path"
+elif command -v open >/dev/null 2>&1; then
+    exec open "$path"
+fi
+exit 3

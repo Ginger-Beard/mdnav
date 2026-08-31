@@ -1,0 +1,170 @@
+#!/usr/bin/env bash
+# mdnav -- mdcat, with links you can click.
+#
+# Renders Markdown with mdcat (images and all), and stays running so that
+# clicking a link to another local file re-renders it in the same pane
+# instead of handing it to some other application.
+#
+# See README.md for how the click round-trip works.
+set -uo pipefail
+
+VERSION=0.1.0
+MDCAT="${MDCAT_BIN:-mdcat}"
+SCHEME="${MDNAV_SCHEME:-mdnav}"
+FIFO="${MDNAV_FIFO:-${XDG_RUNTIME_DIR:-/tmp}/mdnav-$(id -u).fifo}"
+
+here="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+REWRITE="$here/../lib/mdnav_rewrite.py"
+
+die() { printf 'mdnav: %s\n' "$*" >&2; exit 1; }
+
+usage() {
+    cat <<EOF
+mdnav $VERSION -- mdcat, with links you can click.
+
+usage: mdnav [options] <file.md>
+
+  -c, --cat      render once and exit (no click handling)
+  -h, --help     this text
+  -V, --version  print version
+
+keys, while viewing:
+  click   follow a link (needs the handler installed; see README)
+  l       list links and pick one by number
+  b       back
+  r       reload current file
+  q       quit
+EOF
+}
+
+cat_mode=0
+file=""
+while [ $# -gt 0 ]; do
+    case "$1" in
+        -c|--cat) cat_mode=1 ;;
+        -h|--help) usage; exit 0 ;;
+        -V|--version) echo "mdnav $VERSION"; exit 0 ;;
+        -*) die "unknown option: $1" ;;
+        *) file="$1" ;;
+    esac
+    shift
+done
+
+[ -n "$file" ] || { usage >&2; exit 2; }
+[ -f "$file" ] || die "no such file: $file"
+command -v "$MDCAT" >/dev/null 2>&1 || die "mdcat not found (set MDCAT_BIN to override)"
+command -v python3 >/dev/null 2>&1 || die "python3 is required"
+[ -f "$REWRITE" ] || die "missing helper: $REWRITE"
+
+current="$(realpath "$file")"
+declare -a stack=()
+
+work="$(mktemp -d)"
+owns_fifo=0
+cleanup() {
+    rm -rf "$work"
+    [ "$owns_fifo" = 1 ] && rm -f "$FIFO"
+    printf '\e[?25h'
+    stty echo 2>/dev/null
+}
+trap cleanup EXIT INT TERM
+
+render() {
+    local md="$work/render.md" links="$work/links.json"
+    python3 "$REWRITE" "$current" "$md" "$links" "$SCHEME" || die "rewrite failed"
+    clear
+    # Straight to the TTY: mdcat needs a real terminal to size and place
+    # images correctly, so this output is never captured or piped.
+    "$MDCAT" --image-protocol sixel "$md" 2>/dev/null || "$MDCAT" "$md"
+}
+
+link_count() { python3 -c 'import json,sys;print(len(json.load(open(sys.argv[1]))))' "$work/links.json" 2>/dev/null || echo 0; }
+link_path() { python3 -c 'import json,sys;d=json.load(open(sys.argv[1]));i=int(sys.argv[2])-1;print(d[i]["path"] if 0<=i<len(d) else "")' "$work/links.json" "$1" 2>/dev/null; }
+
+list_links() {
+    python3 - "$work/links.json" <<'PY'
+import json, sys
+try:
+    links = json.load(open(sys.argv[1]))
+except Exception:
+    links = []
+if not links:
+    print("  (no local links in this file)")
+for i, l in enumerate(links, 1):
+    print("  {:>2}) {}".format(i, l["label"]))
+PY
+}
+
+goto() {
+    local target="$1"
+    [ -n "$target" ] || return 1
+    if [ ! -f "$target" ]; then
+        return 1
+    fi
+    case "$target" in
+        *.md|*.markdown|*.mkd) ;;
+        *)  # Not markdown -- hand it to the desktop rather than render it.
+            if command -v wslview >/dev/null 2>&1; then wslview "$target"
+            elif command -v xdg-open >/dev/null 2>&1; then xdg-open "$target" >/dev/null 2>&1
+            fi
+            return 0 ;;
+    esac
+    stack+=("$current")
+    current="$target"
+    return 0
+}
+
+status() {
+    local n; n="$(link_count)"
+    printf '\e[7m %s \e[0m  %s link(s)  [click' "${current##*/}" "$n"
+    [ ${#stack[@]} -gt 0 ] && printf ' · b=back'
+    printf ' · l=list · r=reload · q=quit] '
+}
+
+if [ "$cat_mode" = 1 ]; then
+    render
+    exit 0
+fi
+
+# One reader per user. A second instance takes the FIFO over; the handler
+# always writes to this one path.
+[ -p "$FIFO" ] && rm -f "$FIFO"
+mkfifo -m 600 "$FIFO" || die "could not create $FIFO"
+owns_fifo=1
+# Held open read-write so reads never see EOF between clicks.
+exec 3<>"$FIFO"
+
+while :; do
+    render
+    echo
+    status
+
+    action=""
+    while [ -z "$action" ]; do
+        if IFS= read -r -u 3 -t 0.15 uri; then
+            path="$(python3 -c 'import sys,urllib.parse as u;s=sys.argv[1];print(u.unquote(s.split("://",1)[1] if "://" in s else s))' "$uri" 2>/dev/null)"
+            if goto "$path"; then action=nav; fi
+            continue
+        fi
+        if IFS= read -rsn1 -t 0.15 key; then
+            case "$key" in
+                q|Q) action=quit ;;
+                b|B) if [ ${#stack[@]} -gt 0 ]; then
+                         current="${stack[-1]}"; unset 'stack[-1]'; action=nav
+                     fi ;;
+                r|R) action=nav ;;
+                l|L)
+                    echo; list_links
+                    printf 'follow link #: '
+                    stty echo 2>/dev/null
+                    IFS= read -r num
+                    if [ -n "${num//[!0-9]/}" ]; then
+                        goto "$(link_path "$num")" && action=nav
+                    fi
+                    [ -z "$action" ] && { echo; status; } ;;
+            esac
+        fi
+    done
+
+    [ "$action" = quit ] && break
+done
