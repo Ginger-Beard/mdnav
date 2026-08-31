@@ -1,14 +1,15 @@
 #!/usr/bin/env bash
 # mdnav -- mdcat, with links you can click.
 #
-# Renders Markdown with mdcat (images and all), pages it like less, and
-# stays running so that clicking a link to another local file re-renders it
-# in the same pane instead of handing it to some other application.
+# Renders Markdown with mdcat (images and all), pages it a screenful at a
+# time so reading starts at the top, and stays running so that clicking a
+# link to another local file re-renders it in the same pane instead of
+# handing it to some other application.
 #
 # See README.md for how the click round-trip works.
 set -uo pipefail
 
-VERSION=0.2.0
+VERSION=0.3.0
 MDCAT="${MDCAT_BIN:-mdcat}"
 SCHEME="${MDNAV_SCHEME:-mdnav}"
 # Deliberately not under XDG_RUNTIME_DIR: the handler is launched by the
@@ -37,16 +38,18 @@ mdnav $VERSION -- mdcat, with links you can click.
 
 usage: mdnav [options] <file.md>
 
-  -c, --cat      render once and exit, unpaged (like mdcat)
+  -c, --cat      render it all at once, no paging (like mdcat)
   -h, --help     this text
   -V, --version  print version
 
-keys, while viewing:
-  space, PgDn    next page              b, PgUp   previous page
-  down, j        forward a line          up, k     back a line
-  g, G           top, end                r         reload
-  click          follow a link           l         list links, pick by number
-  backspace      back to previous file   q         quit
+keys:
+  space, enter   next screenful     q          quit
+  click          follow a link      l          list links, pick by number
+  backspace      back to previous file
+  r              reload             G          rest of the file at once
+
+Scroll back with the mouse or your terminal's usual keys -- mdnav leaves
+the scrollback alone.
 EOF
 }
 
@@ -83,18 +86,14 @@ IMAGE_PROTOCOL="$(mdnav_image_protocol)"
 current="$(abspath "$file")"
 declare -a stack=()
 declare -a BUFFER_LINES=()
-declare -a tops=()
-top=0
-PAGE_NEXT=0
+BUFFER_INDEX=0
 rows=24
 cols=80
 
 work="$(mktemp -d)"
 owns_fifo=0
 stty_saved=""
-alt_screen=0
 cleanup() {
-    [ "$alt_screen" = 1 ] && printf '\e[?1007l\e[?1049l'
     rm -rf "$work"
     [ "$owns_fifo" = 1 ] && rm -f "$FIFO"
     printf '\e[?25h'
@@ -130,9 +129,9 @@ for i, l in enumerate(links, 1):
 PY
 }
 
-# Render the whole document once into a buffer we page over. --ansi is
-# required because the output is redirected: without it mdcat decides it is
-# not talking to a terminal and drops colour and images.
+# Render the whole document once into a buffer we hand out a screenful at a
+# time. --ansi is required because the output is redirected: without it
+# mdcat decides it is not talking to a terminal and drops colour and images.
 load_buffer() {
     rewrite
     cols="$(tput cols 2>/dev/null || echo 80)"
@@ -151,8 +150,7 @@ load_buffer() {
     # on our stdin and are not keystrokes.
     mdnav_drain_input
 
-    top=0
-    tops=()
+    BUFFER_INDEX=0
 }
 
 goto() {
@@ -173,36 +171,23 @@ goto() {
     return 0
 }
 
-status() {
-    local n left right short pad pos total
+# One line, printed in place and erased when the reader moves on, so it
+# leaves nothing behind in the scrollback they will be scrolling through.
+prompt_line() {
+    local n text
     n="$(link_count)"
-    total="${#BUFFER_LINES[@]}"
-    if [ "$PAGE_NEXT" -ge "$total" ]; then pos="end"
-    elif [ "$top" -le 0 ]; then pos="top"
-    elif [ "$total" -gt 0 ]; then pos="$(( top * 100 / total ))%"
-    else pos="top"
-    fi
-
-    left=" ${current##*/}  ${pos}  ${n} link(s)"
-    right="click a link"
-    [ ${#stack[@]} -gt 0 ] && right="$right · bksp back"
-    right="$right · space/b page · l list · q quit "
-    short="space/b page · l list · q quit "
-
-    pad=$(( cols - ${#left} - ${#right} ))
-    if [ "$pad" -lt 1 ]; then
-        pad=$(( cols - ${#left} - ${#short} ))
-        right="$short"
-    fi
-    if [ "$pad" -lt 1 ]; then
-        printf '\e[7m%-*.*s\e[0m' "$cols" "$cols" " $right"
+    if mdnav_at_end; then
+        text=" ${current##*/}  end  ${n} link(s) · click a link"
     else
-        printf '\e[7m%s%*s%s\e[0m' "$left" "$pad" "" "$right"
+        text=" ${current##*/}  more  ${n} link(s) · space · click a link"
     fi
+    [ ${#stack[@]} -gt 0 ] && text="$text · bksp back"
+    text="$text · l list · q quit "
+    printf '\e[7m%.*s\e[0m' "$cols" "$text"
 }
 
-# --cat keeps the unpaged behaviour: straight to the TTY, so it can be piped
-# or used where a pager would be in the way.
+erase_prompt() { printf '\r\e[K'; }
+
 if [ "$cat_mode" = 1 ]; then
     rewrite
     if [ -n "$IMAGE_PROTOCOL" ]; then
@@ -221,34 +206,21 @@ exec 3<>"$FIFO"
 
 stty_saved="$(stty -g 2>/dev/null || true)"
 raw_mode
-# 1049: alternate screen, so the view starts at the top of the document
-# rather than at the bottom of a scrollback dump. 1007: alternate scroll,
-# so the wheel sends arrow keys -- without enabling mouse reporting, which
-# would swallow the link clicks this whole thing exists for.
-printf '\e[?1049h\e[?1007h'
-alt_screen=1
-
-resized=0
-trap 'resized=1' WINCH
 
 load_buffer
+clear
+fresh=1
 
 while :; do
-    if [ "$resized" = 1 ]; then
-        keep_top="$top"
-        load_buffer
-        top="$keep_top"
-        [ "$top" -ge "${#BUFFER_LINES[@]}" ] && top=0
-        resized=0
-    fi
-
     avail=$(( rows - 1 ))
     [ "$avail" -lt 1 ] && avail=1
 
-    printf '\e[?25l'
-    mdnav_draw_page "$top" "$avail"
-    printf '\e[%d;1H' "$rows"
-    status
+    if [ "$fresh" = 1 ]; then
+        mdnav_print_chunk "$avail"
+        fresh=0
+    fi
+
+    prompt_line
 
     action=""
     while [ -z "$action" ]; do
@@ -261,30 +233,10 @@ while :; do
 
         mdnav_read_key || continue
         case "$KEY" in
-            space|pgdn|char:f)
-                if [ "$PAGE_NEXT" -lt "${#BUFFER_LINES[@]}" ]; then
-                    tops+=("$top"); top="$PAGE_NEXT"; action=redraw
-                fi ;;
-            pgup|char:b)
-                if [ ${#tops[@]} -gt 0 ]; then
-                    last=$(( ${#tops[@]} - 1 ))
-                    top="${tops[$last]}"; unset "tops[$last]"
-                else
-                    top=$(( top - avail )); [ "$top" -lt 0 ] && top=0
-                fi
-                action=redraw ;;
-            down|char:j)
-                if [ "$PAGE_NEXT" -lt "${#BUFFER_LINES[@]}" ]; then
-                    top=$(( top + 1 )); action=redraw
-                fi ;;
-            up|char:k)
-                if [ "$top" -gt 0 ]; then top=$(( top - 1 )); action=redraw; fi ;;
-            home|char:g)
-                top=0; tops=(); action=redraw ;;
-            end|char:G)
-                top=$(( ${#BUFFER_LINES[@]} - avail ))
-                [ "$top" -lt 0 ] && top=0
-                tops=(); action=redraw ;;
+            space|enter|pgdn|down|char:f|char:j)
+                if mdnav_at_end; then :; else action=more; fi ;;
+            char:G)
+                action=rest ;;
             char:r)
                 action=reload ;;
             backspace|char:H)
@@ -294,7 +246,7 @@ while :; do
                     action=nav
                 fi ;;
             char:l|char:L)
-                printf '\e[?25h\e[H\e[2J'
+                erase_prompt
                 cooked_mode
                 list_links
                 printf '\nfollow link #: '
@@ -303,7 +255,7 @@ while :; do
                 if [ -n "${num//[!0-9]/}" ] && goto "$(link_path "$num")"; then
                     action=nav
                 else
-                    action=redraw
+                    action=continue
                 fi ;;
             char:q|char:Q)
                 action=quit ;;
@@ -312,8 +264,18 @@ while :; do
         esac
     done
 
+    erase_prompt
     case "$action" in
         quit) break ;;
-        nav|reload) load_buffer ;;
+        more) mdnav_print_chunk "$avail" ;;
+        rest)
+            while ! mdnav_at_end; do
+                mdnav_print_chunk "$avail"
+            done ;;
+        nav|reload)
+            load_buffer
+            clear
+            fresh=1 ;;
+        continue) : ;;
     esac
 done
