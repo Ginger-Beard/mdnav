@@ -210,3 +210,10 @@ Things that look like they should work, and don't:
 - Links to non-Markdown files are handed to the desktop rather than rendered.
 - Slicing scales an image to the window width but not its height, so a tall
   image is still taller than the screen — it scrolls rather than fitting.
+
+## Licence
+
+MIT — see [LICENSE](LICENSE).
+
+mdnav runs [mdcat](https://github.com/swsnr/mdcat) (MPL-2.0) and ImageMagick as
+separate programs and includes no code from either.
