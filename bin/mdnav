@@ -125,16 +125,27 @@ goto() {
 }
 
 status() {
-    local n width left right pad
+    local n width left right short pad
     n="$(link_count)"
     width="$(tput cols 2>/dev/null || echo 80)"
     left=" ${current##*/}  ${n} link(s)"
-    right="l list"
+
+    # Full hints first; drop the wordier ones as the window narrows rather
+    # than letting the bar wrap onto a second line.
+    right="click a link"
     [ ${#stack[@]} -gt 0 ] && right="$right · b back"
-    right="$right · r reload · q quit "
+    right="$right · l list · r reload · q quit "
+
+    short="l list"
+    [ ${#stack[@]} -gt 0 ] && short="$short · b back"
+    short="$short · r reload · q quit "
+
     pad=$(( width - ${#left} - ${#right} ))
     if [ "$pad" -lt 1 ]; then
-        # Too narrow for both halves; keep the keys, they are the useful part.
+        pad=$(( width - ${#left} - ${#short} ))
+        right="$short"
+    fi
+    if [ "$pad" -lt 1 ]; then
         printf '\e[7m%-*.*s\e[0m' "$width" "$width" " $right"
     else
         printf '\e[7m%s%*s%s\e[0m' "$left" "$pad" "" "$right"
