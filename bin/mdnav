@@ -57,7 +57,8 @@ keys:
   l                      list links, pick one by number
   :p, backspace          back to the previous file
   r                      reload
-  :q                     quit, and :N to jump to line N
+  Ng                     go to line N (as 50g)
+  :q                     quit
   q                      quit
 
 shift+drag selects text: mdnav holds the mouse so the wheel can scroll,
@@ -112,6 +113,7 @@ LINK_COUNT=0
 SEARCH_PAT=""
 SEARCH_DIR=1
 SEARCH_MSG=""
+COUNT=""
 ACTIVE_MATCH=-1
 ACTIVE_OCC=-1
 ACTIVE_RENDER=""
@@ -331,6 +333,17 @@ step_match() {
     else
         set_match $(( MATCH_POS - 1 ))
     fi
+}
+
+# Waits for a key rather than polling past its absence: the second half of
+# a two-key command, where the reader has already committed to typing one.
+read_key_wait() {
+    local tries=0
+    while ! MDNAV_KEY_POLL=0.05 mdnav_read_key; do
+        tries=$(( tries + 1 ))
+        [ "$tries" -gt 100 ] && return 1
+    done
+    return 0
 }
 
 # Typing a pattern is a line edit, so the terminal does it.
@@ -564,6 +577,11 @@ while :; do
     fi
 
     case "$KEY" in
+        char:0|char:1|char:2|char:3|char:4|char:5|char:6|char:7|char:8|char:9|char:g|char:G|home|end) : ;;
+        *) COUNT="" ;;
+    esac
+
+    case "$KEY" in
         char:/)
             run_search 1 "/"
             draw_all; status ;;
@@ -590,10 +608,30 @@ while :; do
                 apply_search
                 draw_all; status
             fi ;;
+        char:0|char:1|char:2|char:3|char:4|char:5|char:6|char:7|char:8|char:9)
+            COUNT="$COUNT${KEY#char:}"
+            SEARCH_MSG="line $COUNT"
+            status ;;
         home|char:g)
-            if [ "$top" -ne 0 ]; then top=0; draw_all; status; fi ;;
+            if [ -n "$COUNT" ]; then
+                top=$(( COUNT - 1 ))
+                [ "$top" -lt 0 ] && top=0
+                [ "$top" -gt "$mt" ] && top="$mt"
+            else
+                top=0
+            fi
+            COUNT=""; SEARCH_MSG=""
+            draw_all; status ;;
         end|char:G)
-            if [ "$top" -ne "$mt" ]; then top="$mt"; draw_all; status; fi ;;
+            if [ -n "$COUNT" ]; then
+                top=$(( COUNT - 1 ))
+                [ "$top" -lt 0 ] && top=0
+                [ "$top" -gt "$mt" ] && top="$mt"
+            else
+                top="$mt"
+            fi
+            COUNT=""; SEARCH_MSG=""
+            draw_all; status ;;
         char:r)
             load_buffer; draw_all; status ;;
         backspace)
@@ -615,27 +653,25 @@ while :; do
             fi
             draw_all; status ;;
         "char::")
-            read_pattern ":"
-            case "$PATTERN" in
-                q|q!|quit|wq|x) break ;;
-                p|prev|previous)
-                    if [ ${#stack[@]} -gt 0 ]; then
-                        last=$(( ${#stack[@]} - 1 ))
-                        current="${stack[$last]}"; unset "stack[$last]"
-                        load_buffer
-                        SEARCH_MSG=""
-                    else
-                        SEARCH_MSG="no previous file"
-                    fi ;;
-                "") : ;;
-                [0-9]*)
-                    top=$(( PATTERN - 1 ))
-                    [ "$top" -lt 0 ] && top=0
-                    [ "$top" -gt "$MT" ] && top="$MT"
-                    SEARCH_MSG="" ;;
-                *) SEARCH_MSG="no such command: $PATTERN" ;;
-            esac
-            draw_all; status ;;
+            # In less, : is a prefix: the command runs on the next key, with
+            # no return to press.
+            if read_key_wait; then
+                case "$KEY" in
+                    char:q|char:x) break ;;
+                    char:p)
+                        if [ ${#stack[@]} -gt 0 ]; then
+                            last=$(( ${#stack[@]} - 1 ))
+                            current="${stack[$last]}"; unset "stack[$last]"
+                            load_buffer
+                            SEARCH_MSG=""
+                        else
+                            SEARCH_MSG="no previous file"
+                        fi ;;
+                    escape) SEARCH_MSG="" ;;
+                    *) SEARCH_MSG="no such command" ;;
+                esac
+                draw_all; status
+            fi ;;
         char:q|char:Q)
             break ;;
     esac

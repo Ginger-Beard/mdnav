@@ -27,8 +27,8 @@ esc                    clear the search
 l                      list links, pick one by number
 :p, backspace          back to the previous file
 r                      reload
-:q                     quit, and :N to jump to line N
-q                      quit
+Ng                     go to line N (as 50g)
+:q, q                  quit
 ```
 
 `mdnav -c` renders once to stdout and exits, like mdcat. `-g` and `-G` control
