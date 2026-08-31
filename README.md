@@ -31,7 +31,7 @@ q                      quit
 ## Install
 
 ```
-git clone https://github.com/YOU/mdnav
+git clone https://github.com/Ginger-Beard/mdnav
 cd mdnav
 ./install.sh
 ```
