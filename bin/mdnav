@@ -88,6 +88,7 @@ fi
 current="$(abspath "$file")"
 declare -a stack=()
 declare -a BUF=()
+LINK_COUNT=0
 top=0
 rows=24
 cols=80
@@ -100,7 +101,6 @@ stty_saved=""
 alt=0
 cleanup() {
     if [ "$alt" = 1 ]; then
-        printf '\e[r'            # release the scrolling region
         printf '\e[?1007l\e[?1049l'
     fi
     rm -rf "$work"
@@ -189,6 +189,7 @@ load_buffer() {
 
     local junk
     while IFS= read -rsn1 -t 0.05 junk; do :; done
+    LINK_COUNT="$(link_count)"
     top=0
 }
 
@@ -234,25 +235,16 @@ draw_all() {
     done
 }
 
-# One line in or out costs one line of drawing, not a repaint: the region
-# scrolls and only the newly exposed row is written. This is what keeps a
-# screenful of image strips from being re-sent on every keystroke.
-scroll_down_one() {
-    local avail; avail="$(view_rows)"
-    printf '\e[%d;1H\n' "$avail"
-    draw_line "$avail" $(( top + avail - 1 ))
-}
-
-scroll_up_one() {
-    printf '\e[1;1H\eM'
-    draw_line 1 "$top"
-}
-
+# Every movement repaints. Scrolling the region instead would be cheaper,
+# but the terminal moves the text cells and leaves the sixel pixels where
+# they were, so images tore into stripes as soon as anything scrolled. A
+# full repaint of a screenful of strips measures around 15ms, which is well
+# inside the budget for it not to matter.
 status() {
     local n pos total avail left right pad
-    n="$(link_count)"
+    n="$LINK_COUNT"
     total="${#BUF[@]}"
-    avail="$(view_rows)"
+    avail=$(( rows - 1 ))
     if [ "$total" -le "$avail" ]; then pos="all"
     elif [ "$top" -le 0 ]; then pos="top"
     elif [ "$top" -ge "$(max_top)" ]; then pos="end"
@@ -303,8 +295,6 @@ resized=0
 trap 'resized=1' WINCH
 
 load_buffer
-# Scrolling region excludes the last row, so the status line stays put.
-printf '\e[1;%dr' "$(view_rows)"
 draw_all
 status
 
@@ -315,7 +305,6 @@ while :; do
         load_buffer
         top="$keep"
         [ "$top" -gt "$(max_top)" ] && top="$(max_top)"
-        printf '\e[1;%dr' "$(view_rows)"
         draw_all
         status
         continue
@@ -324,7 +313,6 @@ while :; do
     if read -t 0 -u 3 2>/dev/null && IFS= read -r -u 3 clicked; then
         if goto "$clicked"; then
             load_buffer
-            printf '\e[1;%dr' "$(view_rows)"
             draw_all
             status
         fi
@@ -337,9 +325,9 @@ while :; do
 
     case "$KEY" in
         down|char:j)
-            if [ "$top" -lt "$mt" ]; then top=$(( top + 1 )); scroll_down_one; status; fi ;;
+            if [ "$top" -lt "$mt" ]; then top=$(( top + 1 )); draw_all; status; fi ;;
         up|char:k)
-            if [ "$top" -gt 0 ]; then top=$(( top - 1 )); scroll_up_one; status; fi ;;
+            if [ "$top" -gt 0 ]; then top=$(( top - 1 )); draw_all; status; fi ;;
         space|pgdn|char:f)
             if [ "$top" -lt "$mt" ]; then
                 top=$(( top + avail )); [ "$top" -gt "$mt" ] && top="$mt"
@@ -363,7 +351,7 @@ while :; do
                 load_buffer; draw_all; status
             fi ;;
         char:l|char:L)
-            printf '\e[r\e[H\e[2J\e[?25h'
+            printf '\e[H\e[2J\e[?25h'
             cooked_mode
             list_links
             printf '\nfollow link #: '
@@ -373,7 +361,6 @@ while :; do
             if [ -n "${num//[!0-9]/}" ] && goto "$(link_path "$num")"; then
                 load_buffer
             fi
-            printf '\e[1;%dr' "$(view_rows)"
             draw_all; status ;;
         char:q|char:Q)
             break ;;
