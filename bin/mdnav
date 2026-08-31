@@ -99,7 +99,11 @@ cleanup() {
     printf '\e[?25h'
     [ -n "$stty_saved" ] && stty "$stty_saved" 2>/dev/null
 }
-trap cleanup EXIT INT TERM
+trap cleanup EXIT
+# Without an explicit exit, bash runs the handler and then carries on -- the
+# loop would continue with its working directory already deleted.
+trap 'cleanup; exit 130' INT
+trap 'cleanup; exit 143' TERM
 
 # Keys are read one at a time while polling, so the terminal must not echo
 # them itself -- read -s only covers its own call, leaving every keystroke

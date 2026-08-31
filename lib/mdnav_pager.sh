@@ -28,17 +28,24 @@ mdnav_print_chunk() {
 
     while [ "$BUFFER_INDEX" -lt "${#BUFFER_LINES[@]}" ]; do
         line="${BUFFER_LINES[$BUFFER_INDEX]}"
-        printf '%s\n' "$line"
-        BUFFER_INDEX=$(( BUFFER_INDEX + 1 ))
 
         case "$line" in
             *$'\eP'*|*$'\e_G'*)
-                # An image's height is decided by the terminal as it
-                # rasterises, and cannot be counted from here. Break, rather
-                # than guess and overshoot.
+                # An image is usually taller than the screen, so printing it
+                # after text scrolls that text away before it can be read.
+                # Give it a screenful of its own: stop here and let it lead
+                # the next chunk.
+                [ "$printed" -gt 0 ] && return 0
+
+                printf '%s\n' "$line"
+                BUFFER_INDEX=$(( BUFFER_INDEX + 1 ))
+                # Its height is decided by the terminal as it rasterises and
+                # cannot be counted from here, so end the chunk.
                 return 0 ;;
         esac
 
+        printf '%s\n' "$line"
+        BUFFER_INDEX=$(( BUFFER_INDEX + 1 ))
         printed=$(( printed + 1 ))
         [ "$printed" -ge "$avail" ] && return 0
     done
