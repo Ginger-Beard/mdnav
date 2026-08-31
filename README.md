@@ -218,6 +218,11 @@ not, so honouring it would have meant a platform-specific lookup on every
 launch for a value that is almost always three. `MDNAV_WHEEL_LINES` overrides
 it; `-1` means a screen at a time.
 
+While mdnav holds the mouse, the terminal stops using it for selection:
+**shift+drag** to select text, which terminals honour as the way past an
+application that has taken the mouse. `MDNAV_MOUSE=0` hands it back
+altogether, at the cost of the wheel moving a line at a time.
+
 Reading wheel events at all means turning on mouse reporting. Alternate scroll
 (`\e[?1007h`) would avoid that by having the terminal send arrow keys instead,
 but Windows Terminal sends exactly one arrow per notch whatever the setting

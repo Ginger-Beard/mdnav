@@ -59,6 +59,9 @@ keys:
   r                      reload
   :q                     quit, and :N to jump to line N
   q                      quit
+
+shift+drag selects text: mdnav holds the mouse so the wheel can scroll,
+and shift is how terminals let you reach past that.
 EOF
 }
 
