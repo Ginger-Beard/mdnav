@@ -182,5 +182,38 @@ DESKTOP
     say "registered x-scheme-handler/mdnav -> $appdir/mdnav.desktop"
 fi
 
+
+# mdcat's own terminal detection reports "ansi" for Windows Terminal even
+# where sixel works, and drops images without saying so. mdnav probes for
+# itself, but plain `mdcat` still needs the environment variable, so offer
+# to set it once.
+# shellcheck source=lib/mdnav_detect.sh
+. "$here/lib/mdnav_detect.sh"
+
+if [ -z "${MDCAT_IMAGE_PROTOCOL:-}" ] && [ -t 0 ] && mdnav_terminal_has_sixel; then
+    case "$(basename "${SHELL:-bash}")" in
+        zsh)  rc="$HOME/.zshrc" ;;
+        bash) rc="$HOME/.bashrc" ;;
+        *)    rc="" ;;
+    esac
+    line='export MDCAT_IMAGE_PROTOCOL=sixel'
+    if [ -n "$rc" ] && ! grep -qs 'MDCAT_IMAGE_PROTOCOL' "$rc"; then
+        echo
+        echo "This terminal supports sixel, but mdcat does not detect that on its"
+        echo "own -- it renders without images unless told. mdnav handles this"
+        echo "itself; setting it also fixes plain 'mdcat'."
+        echo
+        printf 'add "%s" to %s? [y/N] ' "$line" "${rc/#$HOME/\~}"
+        read -r reply
+        case "$reply" in
+            [yY]*)
+                printf '\n# added by mdnav: mdcat does not detect sixel here on its own\n%s\n' "$line" >> "$rc"
+                say "added to ${rc/#$HOME/\~} -- open a new shell, or: source $rc" ;;
+            *)
+                say "skipped; set it yourself with: $line" ;;
+        esac
+    fi
+fi
+
 echo
 echo "done. try:  mdnav README.md"

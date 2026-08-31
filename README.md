@@ -33,7 +33,7 @@ cd mdnav
 ./install.sh
 ```
 
-Requires `mdcat`, `python3`, and bash 3.2 or newer. `install.sh` symlinks
+Requires [`mdcat`](#installing-mdcat), `python3`, and bash 3.2 or newer. `install.sh` symlinks
 `mdnav` into `~/.local/bin` and registers the `mdnav://` scheme with your
 desktop. `./uninstall.sh` removes both, including the registry keys on WSL.
 
@@ -60,6 +60,41 @@ mdnav works without it — you follow links with `l` and a number rather than by
 clicking. You don't need to install anything at all for that; `./bin/mdnav` runs
 as-is.
 
+### Installing mdcat
+
+```
+brew install mdcat          # macOS
+pacman -S mdcat             # Arch
+cargo install mdcat         # anywhere with a Rust toolchain
+```
+
+Prebuilt binaries are on [mdcat's releases
+page](https://github.com/swsnr/mdcat/releases). It is not packaged for Debian
+or Ubuntu.
+
+Building with `cargo` on Debian/Ubuntu needs the OpenSSL headers first,
+otherwise the build fails partway through on `openssl-sys`:
+
+```
+sudo apt install pkg-config libssl-dev
+```
+
+### Images
+
+mdcat picks an image protocol by asking the terminal, and gets it wrong on
+Windows Terminal — it concludes `ansi` and drops images silently, with no
+warning that it did. mdnav probes for sixel itself and passes the answer
+explicitly, so images work without configuration.
+
+Plain `mdcat` still needs to be told, so `install.sh` offers to add this to
+your shell rc:
+
+```
+export MDCAT_IMAGE_PROTOCOL=sixel
+```
+
+Override the choice for mdnav alone with `MDNAV_IMAGE_PROTOCOL`.
+
 ## How it works
 
 The trick is that the *terminal* has to tell a *running program* that you
@@ -79,20 +114,23 @@ a click never silently does nothing.
 
 ## Platform support
 
-| | clicking | images |
-|---|---|---|
-| Linux, OSC 8 terminal (kitty, WezTerm, foot, Ghostty…) | yes | yes, if the terminal does sixel/kitty graphics |
-| WSL + Windows Terminal | yes, with a confirmation dialog | yes, sixel (enabled by default in recent builds) |
-| macOS (iTerm2, kitty, WezTerm, Ghostty) | should work — **untested** | yes, iTerm2/kitty protocols |
-| Terminal without OSC 8 | no — use `l` to pick links by number | unchanged |
+**Only WSL2 has actually been tested** — Ubuntu 24.04 under Windows Terminal
+1.24, with mdcat 2.15. Everything else is written from the specs and reasoning
+below, and has never been run. Reports very welcome.
 
-**macOS is written but unverified** — I have no Mac to test on. The viewer and
-`l` navigation use nothing platform-specific. Clicking registers the scheme by
-building a tiny AppleScript app bundle in `~/Applications` and handing it to
-Launch Services; that path has never been run. Reports welcome.
+| | clicking | images | tested |
+|---|---|---|---|
+| WSL2 + Windows Terminal | yes, with a confirmation dialog | yes, sixel | **yes** |
+| Linux, OSC 8 terminal (kitty, WezTerm, foot, Ghostty…) | should work, via XDG | should work | no |
+| macOS (iTerm2, kitty, WezTerm, Ghostty) | should work, via Launch Services | should work | no |
+| Terminal without OSC 8 | no — use `l` to pick links by number | unchanged | no |
 
-macOS ships bash 3.2, which mdnav works around, but `/usr/bin/env bash` will
-pick up a newer bash from Homebrew if you have one — either is fine.
+On **Linux** the scheme is claimed with an XDG `.desktop` entry; on **macOS**
+by building a small AppleScript app bundle in `~/Applications` and handing it
+to Launch Services. Both follow the documented mechanism, neither has been
+exercised.
+
+macOS ships bash 3.2, which mdnav works around, so no Homebrew bash is needed.
 
 **On WSL**, clicks are handled by Windows rather than Linux, so the scheme is
 registered under `HKCU` and dispatched back through `wsl.exe`. Windows Terminal

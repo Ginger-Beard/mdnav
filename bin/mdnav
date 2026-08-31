@@ -21,6 +21,7 @@ FIFO="${MDNAV_FIFO:-/tmp/mdnav-$(id -u).fifo}"
 abspath() { python3 -c 'import os,sys;print(os.path.realpath(sys.argv[1]))' "$1"; }
 here="$(cd "$(dirname "$(abspath "${BASH_SOURCE[0]}")")" && pwd)"
 REWRITE="$here/../lib/mdnav_rewrite.py"
+DETECT="$here/../lib/mdnav_detect.sh"
 
 die() { printf 'mdnav: %s\n' "$*" >&2; exit 1; }
 
@@ -61,6 +62,11 @@ done
 command -v "$MDCAT" >/dev/null 2>&1 || die "mdcat not found (set MDCAT_BIN to override)"
 command -v python3 >/dev/null 2>&1 || die "python3 is required"
 [ -f "$REWRITE" ] || die "missing helper: $REWRITE"
+[ -f "$DETECT" ] || die "missing helper: $DETECT"
+# shellcheck source=lib/mdnav_detect.sh
+. "$DETECT"
+# Probed once: the query costs a terminal round trip.
+IMAGE_PROTOCOL="$(mdnav_image_protocol)"
 
 current="$(abspath "$file")"
 declare -a stack=()
@@ -88,7 +94,10 @@ render() {
     clear
     # Straight to the TTY: mdcat needs a real terminal to size and place
     # images correctly, so this output is never captured or piped.
-    "$MDCAT" --image-protocol sixel "$md" 2>/dev/null || "$MDCAT" "$md"
+    if [ -n "$IMAGE_PROTOCOL" ]; then
+        "$MDCAT" --image-protocol "$IMAGE_PROTOCOL" "$md" && return
+    fi
+    "$MDCAT" "$md"
 }
 
 link_count() { python3 -c 'import json,sys;print(len(json.load(open(sys.argv[1]))))' "$work/links.json" 2>/dev/null || echo 0; }
