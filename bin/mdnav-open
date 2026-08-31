@@ -13,20 +13,32 @@ FIFO="${MDNAV_FIFO:-/tmp/mdnav-$(id -u).fifo}"
 uri="${1:-}"
 [ -n "$uri" ] || exit 2
 
-path="$(python3 -c 'import sys,urllib.parse as u
-s = sys.argv[1]
-print(u.unquote(s.split("://", 1)[1] if "://" in s else s))' "$uri" 2>/dev/null)"
+# Decode and deliver in one step. Opening a FIFO for writing with O_NONBLOCK
+# fails immediately with ENXIO when no reader has it open, which is exactly
+# the test we want -- and unlike timeout(1) it exists everywhere.
+delivered=0
+path="$(python3 - "$uri" "$FIFO" <<'PY'
+import os
+import sys
+import urllib.parse
 
+uri, fifo = sys.argv[1], sys.argv[2]
+path = urllib.parse.unquote(uri.split("://", 1)[1] if "://" in uri else uri)
+print(path)
+
+try:
+    fd = os.open(fifo, os.O_WRONLY | os.O_NONBLOCK)
+except OSError:
+    sys.exit(1)  # no reader, or no FIFO
+try:
+    os.write(fd, (path + "\n").encode("utf-8"))
+finally:
+    os.close(fd)
+PY
+)" && delivered=1
+
+[ "$delivered" = 1 ] && exit 0
 [ -n "$path" ] || exit 2
-
-# Guarded write: opening a FIFO with no reader blocks forever, and these run
-# detached from any console, so an unguarded write would pile up invisible
-# processes -- one per click.
-if [ -p "$FIFO" ]; then
-    if timeout 1 bash -c 'printf "%s\n" "$1" > "$2"' _ "$path" "$FIFO" 2>/dev/null; then
-        exit 0
-    fi
-fi
 
 # Nothing listening -- fall back to the desktop's own idea of how to open it.
 if command -v wslview >/dev/null 2>&1; then

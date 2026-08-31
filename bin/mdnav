@@ -16,7 +16,10 @@ SCHEME="${MDNAV_SCHEME:-mdnav}"
 # Both ends must derive the same path with no environment involved.
 FIFO="${MDNAV_FIFO:-/tmp/mdnav-$(id -u).fifo}"
 
-here="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+# Neither `readlink -f` nor `realpath` exists everywhere (BSD/macOS), and
+# python3 is already required.
+abspath() { python3 -c 'import os,sys;print(os.path.realpath(sys.argv[1]))' "$1"; }
+here="$(cd "$(dirname "$(abspath "${BASH_SOURCE[0]}")")" && pwd)"
 REWRITE="$here/../lib/mdnav_rewrite.py"
 
 die() { printf 'mdnav: %s\n' "$*" >&2; exit 1; }
@@ -59,7 +62,7 @@ command -v "$MDCAT" >/dev/null 2>&1 || die "mdcat not found (set MDCAT_BIN to ov
 command -v python3 >/dev/null 2>&1 || die "python3 is required"
 [ -f "$REWRITE" ] || die "missing helper: $REWRITE"
 
-current="$(realpath "$file")"
+current="$(abspath "$file")"
 declare -a stack=()
 
 work="$(mktemp -d)"
@@ -186,7 +189,8 @@ while :; do
             case "$key" in
                 q|Q) action=quit ;;
                 b|B) if [ ${#stack[@]} -gt 0 ]; then
-                         current="${stack[-1]}"; unset 'stack[-1]'; action=nav
+                         last=$(( ${#stack[@]} - 1 ))
+                         current="${stack[$last]}"; unset "stack[$last]"; action=nav
                      fi ;;
                 r|R) action=nav ;;
                 l|L)

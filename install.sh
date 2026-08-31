@@ -25,6 +25,7 @@ for arg in "$@"; do
 done
 
 is_wsl() { [ -n "${WSL_DISTRO_NAME:-}" ] || grep -qi microsoft /proc/version 2>/dev/null; }
+is_mac() { [ "$(uname -s)" = "Darwin" ]; }
 say() { printf '  %s\n' "$*"; }
 
 echo "installing mdnav"
@@ -123,6 +124,42 @@ REG
         echo "adds nothing outside HKEY_CURRENT_USER\\Software\\Classes\\mdnav."
         echo "To reverse: mdnav-uninstall.reg, in the same folder."
     fi
+elif is_mac; then
+    # macOS has no XDG and no registry: a URL scheme belongs to an app
+    # bundle. The smallest thing that can own one is an AppleScript app
+    # with an `open location` handler.
+    appdir="$HOME/Applications"
+    app="$appdir/mdnav-open.app"
+    plist="$app/Contents/Info.plist"
+    mkdir -p "$appdir"
+    rm -rf "$app"
+
+    scpt="$(mktemp -t mdnav)"
+    cat > "$scpt" <<APPLESCRIPT
+on open location this_URL
+    set cmd to quoted form of "$here/bin/mdnav-open" & " " & quoted form of this_URL
+    do shell script cmd
+end open location
+APPLESCRIPT
+    osacompile -o "$app" "$scpt" || { echo "osacompile failed" >&2; exit 1; }
+    rm -f "$scpt"
+
+    /usr/libexec/PlistBuddy \
+        -c "Add :CFBundleURLTypes array" \
+        -c "Add :CFBundleURLTypes:0 dict" \
+        -c "Add :CFBundleURLTypes:0:CFBundleURLName string mdnav" \
+        -c "Add :CFBundleURLTypes:0:CFBundleURLSchemes array" \
+        -c "Add :CFBundleURLTypes:0:CFBundleURLSchemes:0 string mdnav" \
+        "$plist" >/dev/null
+
+    lsregister=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
+    [ -x "$lsregister" ] && "$lsregister" -f "$app"
+
+    say "registered mdnav:// -> $app"
+    echo
+    echo "note: macOS may ask for confirmation the first time a link opens the"
+    echo "      app. If clicking does nothing, open $app once by hand so"
+    echo "      Launch Services records it."
 else
     appdir="$HOME/.local/share/applications"
     mkdir -p "$appdir"

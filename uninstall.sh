@@ -5,6 +5,7 @@ set -euo pipefail
 
 bindir="${BINDIR:-$HOME/.local/bin}"
 is_wsl() { [ -n "${WSL_DISTRO_NAME:-}" ] || grep -qi microsoft /proc/version 2>/dev/null; }
+is_mac() { [ "$(uname -s)" = "Darwin" ]; }
 say() { printf '  %s\n' "$*"; }
 
 echo "removing mdnav"
@@ -36,6 +37,14 @@ if is_wsl; then
             rm -rf "$target"
             say "removed $target"
         fi
+    fi
+elif is_mac; then
+    app="$HOME/Applications/mdnav-open.app"
+    if [ -d "$app" ]; then
+        lsregister=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
+        [ -x "$lsregister" ] && "$lsregister" -u "$app" 2>/dev/null || true
+        rm -rf "$app"
+        say "removed $app"
     fi
 else
     appdir="$HOME/.local/share/applications"

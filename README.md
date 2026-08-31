@@ -84,7 +84,16 @@ a click never silently does nothing.
 |---|---|---|
 | Linux, OSC 8 terminal (kitty, WezTerm, foot, Ghostty…) | yes | yes, if the terminal does sixel/kitty graphics |
 | WSL + Windows Terminal | yes, with a confirmation dialog | yes, sixel (enabled by default in recent builds) |
+| macOS (iTerm2, kitty, WezTerm, Ghostty) | should work — **untested** | yes, iTerm2/kitty protocols |
 | Terminal without OSC 8 | no — use `l` to pick links by number | unchanged |
+
+**macOS is written but unverified** — I have no Mac to test on. The viewer and
+`l` navigation use nothing platform-specific. Clicking registers the scheme by
+building a tiny AppleScript app bundle in `~/Applications` and handing it to
+Launch Services; that path has never been run. Reports welcome.
+
+macOS ships bash 3.2, which mdnav works around, but `/usr/bin/env bash` will
+pick up a newer bash from Homebrew if you have one — either is fine.
 
 **On WSL**, clicks are handled by Windows rather than Linux, so the scheme is
 registered under `HKCU` and dispatched back through `wsl.exe`. Windows Terminal
