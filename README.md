@@ -28,15 +28,32 @@ r              reload
 q              quit
 ```
 
-mdnav pages a screenful at a time so reading starts at the top of the
-document rather than the bottom, and never repaints: everything it prints
-stays in the terminal's own scrollback, which is the only thing that
-renders a partially-visible image correctly.
+mdnav holds the first screen at the top of the document, then prints the
+rest on any key. After that it is the same as running mdcat: the output is
+in the terminal's own scrollback, and scrolling is the terminal's, wheel
+included.
 
-Mouse reporting is on for the wheel alone. Windows Terminal still
-activates hyperlinks on ctrl+click while reporting is on, and shift+wheel
-still reaches its scrollback, so claiming the plain wheel costs nothing.
-`MDNAV_MOUSE=0` gives the plain wheel back to the terminal.
+`--all` skips the pause; `--page` pauses every screenful instead of only
+the first.
+
+### Why it pauses at all
+
+Starting at the top and having the whole document already printed are
+mutually exclusive, and not for want of trying:
+
+- The terminal follows output downwards, so printing a document longer
+  than the screen always ends with the view at its bottom.
+- The viewport cannot be moved back up. `CSI T` inserts blank lines and
+  discards the bottom of the buffer rather than restoring anything from
+  scrollback.
+- Repainting a window into the document -- what `less` does -- cannot work
+  with images. A sixel image is one escape the terminal rasterises whole,
+  so a partially-scrolled image cannot be drawn at all; only the
+  terminal's scrollback renders one correctly, and content reaches
+  scrollback only by being scrolled past.
+
+Hence one pause: enough to hold the top of the document on screen, after
+which mdnav stops interfering and the terminal does what it always does.
 
 ## Install
 

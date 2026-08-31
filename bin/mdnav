@@ -38,14 +38,15 @@ mdnav $VERSION -- mdcat, with links you can click.
 
 usage: mdnav [options] <file.md>
 
-  -a, --all      print the whole document up front, then just scroll
+  -a, --all      no pause at all: print everything, then just scroll
+  -p, --page     pause every screenful, rather than only the first
   -c, --cat      render it all at once and exit (like mdcat)
   -h, --help     this text
   -V, --version  print version
 
 keys:
-  space, down    next screenful     q          quit
-  G              rest of the file at once
+  space, down    show the rest       q          quit
+  G              show the rest
   ctrl+click     follow a link      l          list links, pick by number
   backspace      back to previous file
   r              reload
@@ -59,11 +60,13 @@ EOF
 
 cat_mode=0
 all_mode=0
+page_mode=0
 file=""
 while [ $# -gt 0 ]; do
     case "$1" in
         -c|--cat) cat_mode=1 ;;
         -a|--all) all_mode=1 ;;
+        -p|--page) page_mode=1 ;;
         -h|--help) usage; exit 0 ;;
         -V|--version) echo "mdnav $VERSION"; exit 0 ;;
         -*) die "unknown option: $1" ;;
@@ -319,7 +322,14 @@ while :; do
     erase_prompt
     case "$action" in
         quit) break ;;
-        more)  mdnav_print_chunk "$avail" ;;
+        more)
+            if [ "$page_mode" = 1 ]; then
+                mdnav_print_chunk "$avail"
+            else
+                # One pause, not many: hold at the top long enough to read
+                # the start, then print the rest and get out of the way.
+                while ! mdnav_at_end; do mdnav_print_chunk "$avail"; done
+            fi ;;
         lines) mdnav_print_chunk "${MDNAV_WHEEL_LINES:-3}" ;;
         rest)
             while ! mdnav_at_end; do
