@@ -12,7 +12,9 @@
 mdnav_read_key() {
     KEY=""
     local c c2 ch seq
-    IFS= read -rsn1 -t 0.15 c || return 1
+    # Polled alongside the click FIFO, so this is a latency floor on every
+    # keystroke, not just a timeout.
+    IFS= read -rsn1 -t "${MDNAV_KEY_POLL:-0.03}" c || return 1
 
     if [ "$c" != $'\e' ]; then
         case "$c" in

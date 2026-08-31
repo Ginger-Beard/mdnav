@@ -195,6 +195,11 @@ prompt_line() {
 
 erase_prompt() { printf '\r\e[K'; }
 
+# Home and erase the screen, but NOT \e[3J -- which is what clear(1) sends
+# here, and it erases the scrollback along with it. The scrollback is where
+# everything already read lives, and is the whole point.
+clear_screen() { printf '\e[H\e[2J'; }
+
 if [ "$cat_mode" = 1 ]; then
     rewrite
     if [ -n "$IMAGE_PROTOCOL" ]; then
@@ -224,7 +229,7 @@ if [ "${MDNAV_MOUSE:-1}" = 1 ]; then
 fi
 
 load_buffer
-clear
+clear_screen
 fresh=1
 
 while :; do
@@ -242,15 +247,21 @@ while :; do
     while [ -z "$action" ]; do
         # Already percent-decoded by mdnav-open -- decoding again would
         # corrupt any path containing a literal % sequence.
-        if IFS= read -r -u 3 -t 0.15 clicked; then
+        # -t 0 asks whether anything is waiting without consuming it, so
+        # the click channel costs no latency when it is idle.
+        if read -t 0 -u 3 2>/dev/null && IFS= read -r -u 3 clicked; then
             if goto "$clicked"; then action=nav; fi
             continue
         fi
 
         mdnav_read_key || continue
         case "$KEY" in
-            space|enter|pgdn|down|char:f|char:j|wheel-down)
+            space|enter|pgdn|char:f)
                 if mdnav_at_end; then :; else action=more; fi ;;
+            down|char:j|wheel-down)
+                # A notch of the wheel is a few lines everywhere else; a
+                # whole screen per notch overshoots wildly.
+                if mdnav_at_end; then :; else action=lines; fi ;;
             wheel-up)
                 # Scrollback belongs to the terminal, and shift+wheel still
                 # reaches it. Nothing sensible to do from here.
@@ -287,14 +298,15 @@ while :; do
     erase_prompt
     case "$action" in
         quit) break ;;
-        more) mdnav_print_chunk "$avail" ;;
+        more)  mdnav_print_chunk "$avail" ;;
+        lines) mdnav_print_chunk "${MDNAV_WHEEL_LINES:-3}" ;;
         rest)
             while ! mdnav_at_end; do
                 mdnav_print_chunk "$avail"
             done ;;
         nav|reload)
             load_buffer
-            clear
+            clear_screen
             fresh=1 ;;
         continue) : ;;
     esac
