@@ -41,11 +41,11 @@ usage: mdnav [options] <file.md>
 
 keys:
   up/down, k/j, wheel    scroll a line
-  space/PgDn, b/PgUp     scroll a page
+  space/PgDn, u/PgUp     scroll a page
   g / G                  top / bottom
   ctrl+click             follow a link
   l                      list links, pick one by number
-  backspace              back to the previous file
+  b, backspace           back to the previous file
   r                      reload
   q                      quit
 EOF
@@ -333,7 +333,7 @@ while :; do
                 top=$(( top + avail )); [ "$top" -gt "$mt" ] && top="$mt"
                 draw_all; status
             fi ;;
-        pgup|char:b)
+        pgup|char:u)
             if [ "$top" -gt 0 ]; then
                 top=$(( top - avail )); [ "$top" -lt 0 ] && top=0
                 draw_all; status
@@ -344,7 +344,7 @@ while :; do
             if [ "$top" -ne "$mt" ]; then top="$mt"; draw_all; status; fi ;;
         char:r)
             load_buffer; draw_all; status ;;
-        backspace|char:H)
+        backspace|char:b|char:H)
             if [ ${#stack[@]} -gt 0 ]; then
                 last=$(( ${#stack[@]} - 1 ))
                 current="${stack[$last]}"; unset "stack[$last]"

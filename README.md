@@ -19,11 +19,11 @@ mdnav README.md
 
 ```
 up/down, k/j, wheel    scroll a line
-space/PgDn, b/PgUp     scroll a page
+space/PgDn, u/PgUp     scroll a page
 g / G                  top / bottom
 ctrl+click             follow a link
 l                      list links, pick one by number
-backspace              back to the previous file
+b, backspace           back to the previous file
 r                      reload
 q                      quit
 ```
