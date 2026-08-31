@@ -9,7 +9,7 @@ it to your desktop, which opens it in some other application, in some other
 window.
 
 mdnav keeps you where you are. Click a link to another Markdown file and it
-renders in the same pane, with back/forward-style history. Images still work,
+renders in the same pane, with a back stack. Images still work,
 scrolling still works, and documents of any length work — none of which is true
 of the obvious approaches (see [Why not just…](#why-not-just)).
 
@@ -33,7 +33,8 @@ cd mdnav
 ./install.sh
 ```
 
-Requires `mdcat` and `python3`. `install.sh` symlinks `mdnav` into
+Requires `mdcat`, `python3`, and bash 4.3+ (macOS ships bash 3.2; use
+`brew install bash`). `install.sh` symlinks `mdnav` into
 `~/.local/bin` and registers the `mdnav://` scheme with your desktop.
 `./uninstall.sh` removes both, including the registry keys on WSL.
 

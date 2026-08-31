@@ -7,7 +7,9 @@
 # never silently does nothing.
 set -uo pipefail
 
-FIFO="${MDNAV_FIFO:-${XDG_RUNTIME_DIR:-/tmp}/mdnav-$(id -u).fifo}"
+# Must match bin/mdnav exactly, and must not depend on the environment:
+# this runs from the desktop, not from the user's shell.
+FIFO="${MDNAV_FIFO:-/tmp/mdnav-$(id -u).fifo}"
 uri="${1:-}"
 [ -n "$uri" ] || exit 2
 

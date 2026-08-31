@@ -51,7 +51,9 @@ VBS
 
     local_win="$appdata\\mdnav\\mdnav-open.vbs"
     reg.exe add 'HKCU\Software\Classes\mdnav' /ve /d 'URL:mdnav Protocol' /f >/dev/null
-    reg.exe add 'HKCU\Software\Classes\mdnav' /v 'URL Protocol' /d '' /f >/dev/null
+    # No /d: the value only needs to exist, and empty args do not survive
+    # WSL's argument marshaling reliably.
+    reg.exe add 'HKCU\Software\Classes\mdnav' /v 'URL Protocol' /f >/dev/null
     reg.exe add 'HKCU\Software\Classes\mdnav\shell\open\command' /ve \
         /d "wscript.exe \"$local_win\" \"%1\"" /f >/dev/null
     say "registered mdnav:// under HKCU"
@@ -68,7 +70,7 @@ else
 Type=Application
 Name=mdnav
 Comment=Open Markdown links in a running mdnav
-Exec=$here/bin/mdnav-open %u
+Exec="$here/bin/mdnav-open" %u
 Terminal=false
 NoDisplay=true
 MimeType=x-scheme-handler/mdnav;

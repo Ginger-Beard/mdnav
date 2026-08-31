@@ -11,7 +11,10 @@ set -uo pipefail
 VERSION=0.1.0
 MDCAT="${MDCAT_BIN:-mdcat}"
 SCHEME="${MDNAV_SCHEME:-mdnav}"
-FIFO="${MDNAV_FIFO:-${XDG_RUNTIME_DIR:-/tmp}/mdnav-$(id -u).fifo}"
+# Deliberately not under XDG_RUNTIME_DIR: the handler is launched by the
+# desktop (via wsl.exe on WSL) and need not share this shell's environment.
+# Both ends must derive the same path with no environment involved.
+FIFO="${MDNAV_FIFO:-/tmp/mdnav-$(id -u).fifo}"
 
 here="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
 REWRITE="$here/../lib/mdnav_rewrite.py"
@@ -141,8 +144,9 @@ while :; do
 
     action=""
     while [ -z "$action" ]; do
-        if IFS= read -r -u 3 -t 0.15 uri; then
-            path="$(python3 -c 'import sys,urllib.parse as u;s=sys.argv[1];print(u.unquote(s.split("://",1)[1] if "://" in s else s))' "$uri" 2>/dev/null)"
+        # Already percent-decoded by mdnav-open -- decoding again would
+        # corrupt any path containing a literal % sequence.
+        if IFS= read -r -u 3 -t 0.15 path; then
             if goto "$path"; then action=nav; fi
             continue
         fi
