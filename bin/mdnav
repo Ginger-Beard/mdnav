@@ -253,7 +253,7 @@ status() {
 
     left=" ${current##*/}  ${pos}  ${n} link(s)"
     right="ctrl+click a link"
-    [ ${#stack[@]} -gt 0 ] && right="$right · bksp back"
+    [ ${#stack[@]} -gt 0 ] && right="$right · b back"
     right="$right · l list · q quit "
     pad=$(( cols - ${#left} - ${#right} ))
     printf '\e[%d;1H\e[K' "$rows"
