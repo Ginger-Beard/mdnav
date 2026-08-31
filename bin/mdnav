@@ -49,6 +49,9 @@ keys:
   space/PgDn, u/PgUp     scroll a page
   g / G                  top / bottom
   ctrl+click             follow a link
+  / ?                    search forward, backward
+  n / N                  next match, previous
+  esc                    clear the search
   l                      list links, pick one by number
   b, backspace           back to the previous file
   r                      reload
@@ -94,6 +97,10 @@ current="$(abspath "$file")"
 declare -a stack=()
 declare -a BUF=()
 LINK_COUNT=0
+SEARCH_PAT=""
+SEARCH_DIR=1
+SEARCH_MSG=""
+declare -a MATCHES=()
 top=0
 rows=24
 cols=80
@@ -178,17 +185,93 @@ load_buffer() {
         mv "$work/sliced.ansi" "$work/buffer.ansi"
     fi
 
-    BUF=()
-    local line
-    while IFS= read -r line; do
-        BUF+=("$line")
-    done < "$work/buffer.ansi"
+    load_lines "$work/buffer.ansi"
 
     local junk
     while IFS= read -rsn1 -t 0.05 junk; do :; done
     LINK_COUNT="$(link_count)"
     top=0
     recalc
+    # A search outlives the document it was typed in, as it does in less.
+    [ -n "$SEARCH_PAT" ] && apply_search
+    return 0
+}
+
+load_lines() {
+    BUF=()
+    local line
+    while IFS= read -r line; do
+        BUF+=("$line")
+    done < "$1"
+    recalc
+}
+
+# Runs SEARCH_PAT over the buffer, swapping in the copy with matches
+# highlighted. 0: matched. 1: nothing matched. 2: the pattern is not valid.
+apply_search() {
+    local out n
+    MATCHES=()
+    if [ -z "$SEARCH_PAT" ]; then
+        load_lines "$work/buffer.ansi"
+        return 0
+    fi
+    if out="$(python3 "$LIB/mdnav_search.py" "$work/buffer.ansi" "$work/buffer.hl" \
+                "$SEARCH_PAT" 1 2>/dev/null)"; then
+        while IFS= read -r n; do
+            [ -n "$n" ] && MATCHES+=("$n")
+        done <<< "$out"
+        if [ ${#MATCHES[@]} -gt 0 ]; then
+            load_lines "$work/buffer.hl"
+            return 0
+        fi
+        load_lines "$work/buffer.ansi"
+        return 1
+    fi
+    load_lines "$work/buffer.ansi"
+    return 2
+}
+
+# Next match in <dir> from where we are, wrapping round the ends.
+jump_to_match() {
+    local dir="$1" i target=-1
+    [ ${#MATCHES[@]} -gt 0 ] || return 1
+    if [ "$dir" = 1 ]; then
+        for i in "${MATCHES[@]}"; do
+            if [ "$i" -gt "$top" ]; then target="$i"; break; fi
+        done
+        [ "$target" -lt 0 ] && target="${MATCHES[0]}"
+    else
+        for i in "${MATCHES[@]}"; do
+            [ "$i" -lt "$top" ] && target="$i"
+        done
+        [ "$target" -lt 0 ] && target="${MATCHES[$(( ${#MATCHES[@]} - 1 ))]}"
+    fi
+    [ "$target" -gt "$MT" ] && target="$MT"
+    top="$target"
+    return 0
+}
+
+# Typing a pattern is a line edit, so the terminal does it.
+read_pattern() {
+    printf '\e[%d;1H\e[K%s' "$rows" "$1"
+    printf '\e[?25h'
+    cooked_mode
+    IFS= read -r PATTERN
+    raw_mode
+    printf '\e[?25l'
+}
+
+run_search() {   # <direction> <prompt>
+    local dir="$1" rc
+    read_pattern "$2"
+    SEARCH_PAT="$PATTERN"
+    SEARCH_DIR="$dir"
+    apply_search; rc=$?
+    case "$rc" in
+        0) SEARCH_MSG=""; [ -n "$SEARCH_PAT" ] && jump_to_match "$dir" ;;
+        1) SEARCH_MSG="not found" ;;
+        2) SEARCH_MSG="bad pattern" ;;
+    esac
 }
 
 goto() {
@@ -261,6 +344,11 @@ status() {
     fi
 
     left=" ${current##*/}  ${pos}  ${n} link(s)"
+    if [ -n "$SEARCH_MSG" ]; then
+        left="$left  /${SEARCH_PAT}: ${SEARCH_MSG}"
+    elif [ -n "$SEARCH_PAT" ]; then
+        left="$left  /${SEARCH_PAT} (${#MATCHES[@]})"
+    fi
     right="ctrl+click a link"
     [ ${#stack[@]} -gt 0 ] && right="$right · b back"
     right="$right · l list · q quit "
@@ -384,6 +472,30 @@ while :; do
     fi
 
     case "$KEY" in
+        char:/)
+            run_search 1 "/"
+            draw_all; status ;;
+        char:?)
+            run_search -1 "?"
+            draw_all; status ;;
+        char:n)
+            if [ -n "$SEARCH_PAT" ]; then
+                SEARCH_MSG=""
+                jump_to_match "$SEARCH_DIR" || SEARCH_MSG="not found"
+                draw_all; status
+            fi ;;
+        char:N)
+            if [ -n "$SEARCH_PAT" ]; then
+                SEARCH_MSG=""
+                jump_to_match $(( SEARCH_DIR * -1 )) || SEARCH_MSG="not found"
+                draw_all; status
+            fi ;;
+        escape)
+            if [ -n "$SEARCH_PAT" ]; then
+                SEARCH_PAT=""; SEARCH_MSG=""; MATCHES=()
+                apply_search
+                draw_all; status
+            fi ;;
         home|char:g)
             if [ "$top" -ne 0 ]; then top=0; draw_all; status; fi ;;
         end|char:G)
