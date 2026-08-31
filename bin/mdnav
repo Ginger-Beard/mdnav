@@ -40,6 +40,8 @@ mdnav $VERSION -- mdcat, with links you can click.
 usage: mdnav [options] <file.md>
 
   -c, --cat      render once to stdout and exit (like mdcat)
+  -g             highlight only the current match, not all of them
+  -G             do not highlight matches at all
   -h, --help     this text
   -V, --version  print version
 
@@ -61,10 +63,15 @@ EOF
 }
 
 cat_mode=0
+# How much of a search to mark, following less: all matches by default, only
+# the current one under -g, none under -G.
+HILITE=all
 file=""
 while [ $# -gt 0 ]; do
     case "$1" in
         -c|--cat) cat_mode=1 ;;
+        -g|--hilite-search) HILITE=current ;;
+        -G|--HILITE-SEARCH) HILITE=none ;;
         -h|--help) usage; exit 0 ;;
         -V|--version) echo "mdnav $VERSION"; exit 0 ;;
         -*) die "unknown option: $1" ;;
@@ -97,6 +104,7 @@ fi
 current="$(abspath "$file")"
 declare -a stack=()
 declare -a BUF=()
+declare -a HLBUF=()
 LINK_COUNT=0
 SEARCH_PAT=""
 SEARCH_DIR=1
@@ -209,6 +217,14 @@ load_lines() {
     recalc
 }
 
+load_hl() {
+    HLBUF=()
+    local line
+    while IFS= read -r line; do
+        HLBUF+=("$line")
+    done < "$1"
+}
+
 # Runs SEARCH_PAT over the buffer, swapping in the copy with matches
 # highlighted. 0: matched. 1: nothing matched. 2: the pattern is not valid.
 apply_search() {
@@ -216,8 +232,8 @@ apply_search() {
     MATCHES=()
     ACTIVE_MATCH=-1
     MATCH_POS=-1
+    HLBUF=()
     if [ -z "$SEARCH_PAT" ]; then
-        load_lines "$work/buffer.ansi"
         return 0
     fi
     if out="$(python3 "$LIB/mdnav_search.py" "$work/buffer.ansi" "$work/buffer.hl" \
@@ -226,13 +242,13 @@ apply_search() {
             [ -n "$n" ] && MATCHES+=("$n")
         done <<< "$out"
         if [ ${#MATCHES[@]} -gt 0 ]; then
-            load_lines "$work/buffer.hl"
+            [ "$HILITE" = none ] || load_hl "$work/buffer.hl"
             return 0
         fi
-        load_lines "$work/buffer.ansi"
+        HLBUF=()
         return 1
     fi
-    load_lines "$work/buffer.ansi"
+    HLBUF=()
     return 2
 }
 
@@ -265,13 +281,6 @@ jump_to_match() {
     return 0
 }
 
-# The match you are on, told apart from the rest. Every match is already
-# marked with reverse video; the current one adds underline, which reads as
-# different without disturbing whatever colour the line already had.
-active_line() {
-    local l="${1//$'\e[7m'/$'\e[7;4m'}"
-    printf '%s' "${l//$'\e[27m'/$'\e[27;24m'}"
-}
 
 # Typing a pattern is a line edit, so the terminal does it.
 read_pattern() {
@@ -329,8 +338,9 @@ draw_line() {   # <screen row> <buffer index>
     local srow="$1" i="$2"
     printf '\e[%d;1H\e[K' "$srow"
     [ "$i" -lt "${#BUF[@]}" ] || return 0
-    if [ "$i" = "$ACTIVE_MATCH" ]; then
-        active_line "${BUF[$i]}"
+    if [ "$i" -lt "${#HLBUF[@]}" ] && \
+       { [ "$HILITE" = all ] || [ "$i" = "$ACTIVE_MATCH" ]; }; then
+        printf '%s' "${HLBUF[$i]}"
     else
         printf '%s' "${BUF[$i]}"
     fi

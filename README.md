@@ -31,7 +31,8 @@ r                      reload
 q                      quit
 ```
 
-`mdnav -c` renders once to stdout and exits, like mdcat.
+`mdnav -c` renders once to stdout and exits, like mdcat. `-g` and `-G` control
+search highlighting, as they do in less.
 
 ## Install
 
@@ -194,9 +195,9 @@ passes the answer explicitly; `install.sh` offers to set
 Patterns are regular expressions, and a pattern typed in lower case matches
 either case -- the same bargain less strikes.
 
-Every match is marked in reverse video and the one you are on adds an
-underline, so it can be told from its neighbours when they are close
-together; the status line counts your place, as `[2/7]`.
+Every match is marked in reverse video, as in less. `-g` marks only the match
+you are on, which is how less answers the question of which one that is; `-G`
+marks none. The status line counts your place either way, as `[2/7]`.
 
 Matching happens against what is on screen as text, not the bytes making it
 up, so colour escapes, hyperlinks and images do not get in the way of a
