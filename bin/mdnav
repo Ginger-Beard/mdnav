@@ -43,13 +43,14 @@ usage: mdnav [options] <file.md>
   -V, --version  print version
 
 keys:
-  space, enter   next screenful     q          quit
-  click          follow a link      l          list links, pick by number
+  space, wheel   next screenful     q          quit
+  ctrl+click     follow a link      l          list links, pick by number
   backspace      back to previous file
   r              reload             G          rest of the file at once
 
-Scroll back with the mouse or your terminal's usual keys -- mdnav leaves
-the scrollback alone.
+Scroll back with shift+wheel: the plain wheel advances the pager, and the
+scrollback stays the terminal's own. MDNAV_MOUSE=0 turns that off and
+leaves the plain wheel scrolling instead.
 EOF
 }
 
@@ -93,7 +94,9 @@ cols=80
 work="$(mktemp -d)"
 owns_fifo=0
 stty_saved=""
+mouse_on=0
 cleanup() {
+    [ "$mouse_on" = 1 ] && printf '\e[?1006l\e[?1000l'
     rm -rf "$work"
     [ "$owns_fifo" = 1 ] && rm -f "$FIFO"
     printf '\e[?25h'
@@ -211,6 +214,15 @@ exec 3<>"$FIFO"
 stty_saved="$(stty -g 2>/dev/null || true)"
 raw_mode
 
+# Mouse reporting, for the wheel alone. This is safe here in a way it is
+# not generally: the terminal still activates hyperlinks on ctrl+click
+# while reporting is on, and shift+wheel still scrolls its own scrollback,
+# so nothing is taken away by claiming the plain wheel.
+if [ "${MDNAV_MOUSE:-1}" = 1 ]; then
+    printf '\e[?1000h\e[?1006h'
+    mouse_on=1
+fi
+
 load_buffer
 clear
 fresh=1
@@ -237,8 +249,12 @@ while :; do
 
         mdnav_read_key || continue
         case "$KEY" in
-            space|enter|pgdn|down|char:f|char:j)
+            space|enter|pgdn|down|char:f|char:j|wheel-down)
                 if mdnav_at_end; then :; else action=more; fi ;;
+            wheel-up)
+                # Scrollback belongs to the terminal, and shift+wheel still
+                # reaches it. Nothing sensible to do from here.
+                : ;;
             char:G)
                 action=rest ;;
             char:r)

@@ -49,8 +49,24 @@ mdnav_read_key() {
         F)    KEY="end" ;;
         5~)   KEY="pgup" ;;
         6~)   KEY="pgdn" ;;
-        *R|*t|*c) KEY="ignore" ;;   # cursor position, size, device attributes
+        \<*M) KEY="$(mdnav_mouse_key "$seq")" ;;
+        \<*m) KEY="ignore" ;;        # button release
+        *R|*t|*c) KEY="ignore" ;;    # cursor position, size, device attributes
         *)    KEY="escape" ;;
     esac
     return 0
+}
+
+# SGR mouse report: <button;column;rowM. Only the wheel interests us --
+# clicks are left to the terminal, which activates hyperlinks itself even
+# while mouse reporting is on.
+mdnav_mouse_key() {
+    local seq="$1" btn
+    btn="${seq#<}"
+    btn="${btn%%;*}"
+    case "$btn" in
+        64) printf 'wheel-up' ;;
+        65) printf 'wheel-down' ;;
+        *)  printf 'ignore' ;;
+    esac
 }

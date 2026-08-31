@@ -18,12 +18,25 @@ mdnav README.md
 ```
 
 ```
-click   follow a link
-l       list links, pick one by number
-b       back
-r       reload
-q       quit
+space, wheel   next screenful
+ctrl+click     follow a link
+shift+wheel    scroll back through what you have read
+l              list links, pick one by number
+backspace      back to the previous file
+G              rest of the file at once
+r              reload
+q              quit
 ```
+
+mdnav pages a screenful at a time so reading starts at the top of the
+document rather than the bottom, and never repaints: everything it prints
+stays in the terminal's own scrollback, which is the only thing that
+renders a partially-visible image correctly.
+
+Mouse reporting is on for the wheel alone. Windows Terminal still
+activates hyperlinks on ctrl+click while reporting is on, and shift+wheel
+still reaches its scrollback, so claiming the plain wheel costs nothing.
+`MDNAV_MOUSE=0` gives the plain wheel back to the terminal.
 
 ## Install
 
