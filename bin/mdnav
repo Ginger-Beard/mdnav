@@ -46,14 +46,14 @@ usage: mdnav [options] <file.md>
 keys:
   up/down, k/j           scroll a line
   wheel                  scroll 3 lines (MDNAV_WHEEL_LINES)
-  space/PgDn, u/PgUp     scroll a page
+  space/PgDn, b/u/PgUp   scroll a page
   g / G                  top / bottom
   ctrl+click             follow a link
   / ?                    search forward, backward
   n / N                  next match, previous
   esc                    clear the search
   l                      list links, pick one by number
-  b, backspace           back to the previous file
+  :p, backspace          back to the previous file
   r                      reload
   :q                     quit, and :N to jump to line N
   q                      quit
@@ -351,7 +351,7 @@ status() {
         left="$left  /${SEARCH_PAT} (${#MATCHES[@]})"
     fi
     right="ctrl+click a link"
-    [ ${#stack[@]} -gt 0 ] && right="$right · b back"
+    [ ${#stack[@]} -gt 0 ] && right="$right · :p back"
     right="$right · l list · q quit "
     pad=$(( cols - ${#left} - ${#right} ))
     printf '\e[%d;1H\e[K' "$rows"
@@ -455,7 +455,7 @@ while :; do
                 else delta=$(( delta - WHEEL_LINES )); fi
                 moved=1 ;;
             space|pgdn|char:f) delta=$(( delta + avail )); moved=1 ;;
-            pgup|char:u)       delta=$(( delta - avail )); moved=1 ;;
+            pgup|char:u|char:b) delta=$(( delta - avail )); moved=1 ;;
             *) break ;;
         esac
         KEY=""
@@ -503,7 +503,7 @@ while :; do
             if [ "$top" -ne "$mt" ]; then top="$mt"; draw_all; status; fi ;;
         char:r)
             load_buffer; draw_all; status ;;
-        backspace|char:b|char:H)
+        backspace)
             if [ ${#stack[@]} -gt 0 ]; then
                 last=$(( ${#stack[@]} - 1 ))
                 current="${stack[$last]}"; unset "stack[$last]"
@@ -525,6 +525,15 @@ while :; do
             read_pattern ":"
             case "$PATTERN" in
                 q|q!|quit|wq|x) break ;;
+                p|prev|previous)
+                    if [ ${#stack[@]} -gt 0 ]; then
+                        last=$(( ${#stack[@]} - 1 ))
+                        current="${stack[$last]}"; unset "stack[$last]"
+                        load_buffer
+                        SEARCH_MSG=""
+                    else
+                        SEARCH_MSG="no previous file"
+                    fi ;;
                 "") : ;;
                 [0-9]*)
                     top=$(( PATTERN - 1 ))

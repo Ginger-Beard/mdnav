@@ -18,14 +18,14 @@ mdnav README.md
 ```
 up/down, k/j           scroll a line
 wheel                  scroll 3 lines (MDNAV_WHEEL_LINES)
-space/PgDn, u/PgUp     scroll a page
+space/PgDn, b/u/PgUp   scroll a page
 g / G                  top / bottom
 ctrl+click             follow a link
 / ?                    search forward, backward
 n / N                  next match, previous
 esc                    clear the search
 l                      list links, pick one by number
-b, backspace           back to the previous file
+:p, backspace          back to the previous file
 r                      reload
 :q                     quit, and :N to jump to line N
 q                      quit
