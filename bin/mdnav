@@ -55,6 +55,7 @@ keys:
   l                      list links, pick one by number
   b, backspace           back to the previous file
   r                      reload
+  :q                     quit, and :N to jump to line N
   q                      quit
 EOF
 }
@@ -475,7 +476,7 @@ while :; do
         char:/)
             run_search 1 "/"
             draw_all; status ;;
-        char:?)
+        "char:?")
             run_search -1 "?"
             draw_all; status ;;
         char:n)
@@ -519,6 +520,19 @@ while :; do
             if [ -n "${num//[!0-9]/}" ] && goto "$(link_path "$num")"; then
                 load_buffer
             fi
+            draw_all; status ;;
+        "char::")
+            read_pattern ":"
+            case "$PATTERN" in
+                q|q!|quit|wq|x) break ;;
+                "") : ;;
+                [0-9]*)
+                    top=$(( PATTERN - 1 ))
+                    [ "$top" -lt 0 ] && top=0
+                    [ "$top" -gt "$MT" ] && top="$MT"
+                    SEARCH_MSG="" ;;
+                *) SEARCH_MSG="no such command: $PATTERN" ;;
+            esac
             draw_all; status ;;
         char:q|char:Q)
             break ;;

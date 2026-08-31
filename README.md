@@ -27,6 +27,7 @@ esc                    clear the search
 l                      list links, pick one by number
 b, backspace           back to the previous file
 r                      reload
+:q                     quit, and :N to jump to line N
 q                      quit
 ```
 
