@@ -50,7 +50,7 @@ keys:
   g / G                  top / bottom
   ctrl+click             follow a link
   / ?                    search forward, backward
-  n / N                  next match, previous
+  n / N, p               next match, previous
   esc                    clear the search
   l                      list links, pick one by number
   b, backspace           back to the previous file
@@ -485,7 +485,7 @@ while :; do
                 jump_to_match "$SEARCH_DIR" || SEARCH_MSG="not found"
                 draw_all; status
             fi ;;
-        char:N)
+        char:N|char:p)
             if [ -n "$SEARCH_PAT" ]; then
                 SEARCH_MSG=""
                 jump_to_match $(( SEARCH_DIR * -1 )) || SEARCH_MSG="not found"

@@ -22,7 +22,7 @@ space/PgDn, u/PgUp     scroll a page
 g / G                  top / bottom
 ctrl+click             follow a link
 / ?                    search forward, backward
-n / N                  next match, previous
+n / N, p               next match, previous
 esc                    clear the search
 l                      list links, pick one by number
 b, backspace           back to the previous file
@@ -190,7 +190,8 @@ passes the answer explicitly; `install.sh` offers to set
 
 ### Search
 
-`/` and `?` search forward and backward, `n` and `N` repeat, `esc` clears.
+`/` and `?` search forward and backward, `n` and `N` (or `p`) repeat, `esc`
+clears.
 Patterns are regular expressions, and a pattern typed in lower case matches
 either case -- the same bargain less strikes.
 
