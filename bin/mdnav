@@ -187,6 +187,7 @@ load_buffer() {
     while IFS= read -rsn1 -t 0.05 junk; do :; done
     LINK_COUNT="$(link_count)"
     top=0
+    recalc
 }
 
 goto() {
@@ -206,13 +207,16 @@ goto() {
     return 0
 }
 
-view_rows() { echo $(( rows - 1 )); }
-
-max_top() {
-    local avail; avail="$(view_rows)"
-    local m=$(( ${#BUF[@]} - avail ))
-    [ "$m" -lt 0 ] && m=0
-    echo "$m"
+# AVAIL: rows of document on screen. MT: the largest useful top index.
+# Kept as variables rather than functions returning through $( ), which
+# forks a subprocess -- six of them per keystroke, which is enough to feel.
+AVAIL=1
+MT=0
+recalc() {
+    AVAIL=$(( rows - 1 ))
+    [ "$AVAIL" -lt 1 ] && AVAIL=1
+    MT=$(( ${#BUF[@]} - AVAIL ))
+    [ "$MT" -lt 0 ] && MT=0
 }
 
 draw_line() {   # <screen row> <buffer index>
@@ -222,7 +226,7 @@ draw_line() {   # <screen row> <buffer index>
 }
 
 draw_all() {
-    local avail; avail="$(view_rows)"
+    local avail="$AVAIL"
     local r=1
     # Synchronised update: the terminal shows the frame only once it is
     # complete, instead of letting the repaint be watched happening.
@@ -251,7 +255,7 @@ status() {
     avail=$(( rows - 1 ))
     if [ "$total" -le "$avail" ]; then pos="all"
     elif [ "$top" -le 0 ]; then pos="top"
-    elif [ "$top" -ge "$(max_top)" ]; then pos="end"
+    elif [ "$top" -ge "$MT" ]; then pos="end"
     else pos="$(( top * 100 / (total - avail) ))%"
     fi
 
@@ -309,7 +313,8 @@ while :; do
         keep="$top"
         load_buffer
         top="$keep"
-        [ "$top" -gt "$(max_top)" ] && top="$(max_top)"
+        recalc
+        [ "$top" -gt "$MT" ] && top="$MT"
         draw_all
         status
         continue
@@ -325,24 +330,38 @@ while :; do
     fi
 
     mdnav_read_key || continue
-    avail="$(view_rows)"
-    mt="$(max_top)"
+    avail="$AVAIL"
+    mt="$MT"
+
+    # Movement is accumulated before anything is drawn. One notch of the
+    # wheel arrives as several arrow keys, and repainting per key means the
+    # display runs behind the input by however far it has fallen -- which
+    # reads as scrolling being slow, rather than as frames being wasted.
+    delta=0
+    moved=0
+    while :; do
+        case "$KEY" in
+            down|char:j)       delta=$(( delta + 1 )); moved=1 ;;
+            up|char:k)         delta=$(( delta - 1 )); moved=1 ;;
+            space|pgdn|char:f) delta=$(( delta + avail )); moved=1 ;;
+            pgup|char:u)       delta=$(( delta - avail )); moved=1 ;;
+            *) break ;;
+        esac
+        KEY=""
+        MDNAV_KEY_POLL=0.005 mdnav_read_key || break
+    done
+
+    if [ "$moved" = 1 ]; then
+        new=$(( top + delta ))
+        [ "$new" -lt 0 ] && new=0
+        [ "$new" -gt "$mt" ] && new="$mt"
+        if [ "$new" -ne "$top" ]; then
+            top="$new"
+            draw_all; status
+        fi
+    fi
 
     case "$KEY" in
-        down|char:j)
-            if [ "$top" -lt "$mt" ]; then top=$(( top + 1 )); draw_all; status; fi ;;
-        up|char:k)
-            if [ "$top" -gt 0 ]; then top=$(( top - 1 )); draw_all; status; fi ;;
-        space|pgdn|char:f)
-            if [ "$top" -lt "$mt" ]; then
-                top=$(( top + avail )); [ "$top" -gt "$mt" ] && top="$mt"
-                draw_all; status
-            fi ;;
-        pgup|char:u)
-            if [ "$top" -gt 0 ]; then
-                top=$(( top - avail )); [ "$top" -lt 0 ] && top=0
-                draw_all; status
-            fi ;;
         home|char:g)
             if [ "$top" -ne 0 ]; then top=0; draw_all; status; fi ;;
         end|char:G)
