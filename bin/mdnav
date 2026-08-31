@@ -105,7 +105,7 @@ stty_saved=""
 alt=0
 cleanup() {
     if [ "$alt" = 1 ]; then
-        printf '\e[?1007l\e[?1049l'
+        printf '\e[?2026l\e[?1007l\e[?1049l'
     fi
     rm -rf "$work"
     [ "$owns_fifo" = 1 ] && rm -f "$FIFO"
@@ -224,12 +224,20 @@ draw_line() {   # <screen row> <buffer index>
 draw_all() {
     local avail; avail="$(view_rows)"
     local r=1
-    printf '\e[H\e[2J'
+    # Synchronised update: the terminal shows the frame only once it is
+    # complete, instead of letting the repaint be watched happening.
+    # Terminals that do not know the mode ignore it.
+    printf '\e[?2026h\e[H'
     while [ "$r" -le "$avail" ]; do
+        # Each row is erased as it is rewritten, so there is no need to
+        # blank the screen first -- doing that showed an empty frame
+        # between every scroll.
         draw_line "$r" $(( top + r - 1 ))
         r=$(( r + 1 ))
     done
 }
+
+end_frame() { printf '\e[?2026l'; }
 
 # Every movement repaints. Scrolling the region instead would be cheaper,
 # but the terminal moves the text cells and leaves the sixel pixels where
@@ -258,6 +266,7 @@ status() {
     else
         printf '\e[7m%s%*s%s\e[0m' "$left" "$pad" "" "$right"
     fi
+    end_frame
 }
 
 if [ "$cat_mode" = 1 ]; then
