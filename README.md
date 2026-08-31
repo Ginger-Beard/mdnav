@@ -3,15 +3,13 @@
 `mdcat`, with links you can click.
 
 [mdcat](https://github.com/swsnr/mdcat) renders Markdown in the terminal
-beautifully — including real images, via sixel or the kitty protocol. What it
-cannot do is let you *follow* a link to another local file: activating one hands
-it to your desktop, which opens it in some other application, in some other
-window.
+beautifully, images included. What it cannot do is let you *follow* a link to
+another local file: activating one hands it to your desktop, which opens it in
+some other application, in some other window.
 
-mdnav keeps you where you are. Click a link to another Markdown file and it
-renders in the same pane, with a back stack. Images still work,
-scrolling still works, and documents of any length work — none of which is true
-of the obvious approaches (see [Why not just…](#why-not-just)).
+mdnav keeps you where you are. It is a pager — opens at the top of the
+document, scrolls both ways, images and all — and a click on a link to another
+Markdown file renders that file in the same pane, with a back stack.
 
 ```
 mdnav README.md
@@ -28,51 +26,115 @@ r                      reload
 q                      quit
 ```
 
-It is a pager: opens at the top, scrolls both ways, no flags.
+`mdnav -c` renders once to stdout and exits, like mdcat.
 
-### Images are sliced
+## Install
 
-An image would normally make that impossible. A sixel image is a single
-escape sequence the terminal rasterises whole, routinely tens of rows
-tall, and nothing above the terminal can say how tall it came out or draw
-part of it. A pager cannot lay out what it cannot measure, which is also
-why `less` mangles mdcat's output: it counts a 79-row image as one line.
+```
+git clone https://github.com/YOU/mdnav
+cd mdnav
+./install.sh
+```
 
-So mdnav cuts each image into strips exactly one text row tall, one sixel
-escape each, before rendering. Every line in the buffer is then exactly
-one screen row. Layout is arithmetic again, and a half-scrolled image is
-just the strips that fall inside the window.
+Requires [`mdcat`](#installing-mdcat), `python3`, and bash 3.2 or newer.
+[ImageMagick](https://imagemagick.org) is optional but wanted — see
+[Images are sliced](#images-are-sliced).
 
-This needs ImageMagick (`convert`) and a sixel terminal. Without either,
-images are left whole and drawn by mdcat -- everything still works, but a
-tall image jumps into view rather than scrolling.
+`install.sh` symlinks `mdnav` into `~/.local/bin` and registers the `mdnav://`
+scheme with your desktop. `./uninstall.sh` removes both, including the registry
+keys on WSL and the strip cache.
 
-Strips are cached under `~/.cache/mdnav`, keyed by the image, its
-modification time, and the width it was rendered for. Slicing a tall image
-takes about a second; afterwards it is immediate.
+### Locked-down machines
+
+Clicking needs the `mdnav://` scheme registered, and on Windows the registry is
+the only mechanism for that. The keys go under `HKEY_CURRENT_USER`, so no admin
+rights are involved and it usually works on managed laptops — but some are
+locked down further.
+
+If the write fails, `install.sh` says so and leaves everything else working. It
+also writes `mdnav-install.reg` and `mdnav-uninstall.reg` into
+`%LOCALAPPDATA%\mdnav\`, so you can review the change, apply it by
+double-clicking, or hand it to whoever administers the machine. It adds nothing
+outside `HKEY_CURRENT_USER\Software\Classes\mdnav`.
+
+To skip registration entirely:
+
+```
+./install.sh --no-scheme
+```
+
+mdnav still works — you follow links with `l` and a number rather than by
+clicking. Nothing needs installing at all for that; `./bin/mdnav` runs as-is.
+
+### Installing mdcat
+
+```
+brew install mdcat          # macOS
+pacman -S mdcat             # Arch
+cargo install mdcat         # anywhere with a Rust toolchain
+```
+
+Prebuilt binaries are on [mdcat's releases
+page](https://github.com/swsnr/mdcat/releases). It is not packaged for Debian
+or Ubuntu.
+
+Building with `cargo` on Debian/Ubuntu needs the OpenSSL headers first,
+otherwise the build fails partway through on `openssl-sys`:
+
+```
+sudo apt install pkg-config libssl-dev
+```
 
 ## How it works
 
-The trick is that the *terminal* has to tell a *running program* that you
-clicked something, and terminals have no way to do that. So mdnav borrows the
-one channel that does cross that gap: a URL scheme.
+### Clicking
+
+The terminal has to tell a *running program* that you clicked something, and
+terminals have no way to do that. So mdnav borrows the one channel that does
+cross that gap: a URL scheme.
 
 1. Before rendering, mdnav rewrites local links in a temp copy of the document
    from `./OTHER.md` to `mdnav:///abs/path/OTHER.md`.
 2. mdcat renders that copy and emits each link as an OSC 8 hyperlink — the
-   terminal now owns the hit-testing, at any scroll position.
+   terminal owns the hit-testing from there.
 3. Clicking hands `mdnav://…` to the desktop, which routes it to `mdnav-open`.
-4. `mdnav-open` writes the path into a FIFO that the running mdnav is reading,
-   and mdnav re-renders in place.
+4. `mdnav-open` writes the path into a FIFO the running mdnav is reading, and
+   mdnav renders it in place.
 
-If no mdnav is running, `mdnav-open` opens the file the ordinary way instead, so
-a click never silently does nothing.
+If no mdnav is running, `mdnav-open` opens the file the ordinary way instead,
+so a click never silently does nothing.
+
+### Images are sliced
+
+Being a pager at all depends on this. A sixel image is a single escape sequence
+the terminal rasterises whole, routinely tens of rows tall, and nothing above
+the terminal can say how tall it came out or draw part of it. A pager cannot
+lay out what it cannot measure — which is also why piping mdcat to `less`
+fails: less counts a 79-row image as one line and draws the rest over the text.
+
+So mdnav cuts each image into strips exactly one text row tall, one sixel
+escape each, before rendering. Every line in the buffer is then exactly one
+screen row: layout is arithmetic again, and a half-scrolled image is simply the
+strips that fall inside the window.
+
+This needs ImageMagick (`convert`) and a sixel terminal. Without either, images
+are left whole for mdcat to draw — everything still works, but a tall image
+jumps into view rather than scrolling.
+
+Strips are cached under `~/.cache/mdnav`, keyed by the image, its modification
+time, and the width it was rendered for. Slicing a tall image takes about a
+second; afterwards it is immediate.
+
+Every movement repaints rather than scrolling the terminal's scrolling region.
+The region would be cheaper, but terminals move the text cells and leave the
+sixel pixels behind, which tears images into stripes. A repaint of a screenful
+of strips measures around 15ms.
 
 ## Platform support
 
 **Only WSL2 has actually been tested** — Ubuntu 24.04 under Windows Terminal
 1.24, with mdcat 2.15. Everything else is written from the specs and reasoning
-below, and has never been run. Reports very welcome.
+here, and has never been run. Reports very welcome.
 
 | | clicking | images | tested |
 |---|---|---|---|
@@ -81,9 +143,9 @@ below, and has never been run. Reports very welcome.
 | macOS (iTerm2, kitty, WezTerm, Ghostty) | should work, via Launch Services | should work | no |
 | Terminal without OSC 8 | no — use `l` to pick links by number | unchanged | no |
 
-On **Linux** the scheme is claimed with an XDG `.desktop` entry; on **macOS**
-by building a small AppleScript app bundle in `~/Applications` and handing it
-to Launch Services. Both follow the documented mechanism, neither has been
+On **Linux** the scheme is claimed with an XDG `.desktop` entry; on **macOS** by
+building a small AppleScript app bundle in `~/Applications` and handing it to
+Launch Services. Both follow the documented mechanism, neither has been
 exercised.
 
 macOS ships bash 3.2, which mdnav works around, so no Homebrew bash is needed.
@@ -91,33 +153,56 @@ macOS ships bash 3.2, which mdnav works around, so no Homebrew bash is needed.
 **On WSL**, clicks are handled by Windows rather than Linux, so the scheme is
 registered under `HKCU` and dispatched back through `wsl.exe`. Windows Terminal
 shows a *"This link may lead to an unsafe location"* confirmation for any
-non-web scheme, and offers no setting to suppress it — so following a link there
-costs an extra click. This is the price of the only mechanism that survives the
-round trip; see below.
+non-web scheme, and offers no setting to suppress it — so following a link
+there costs an extra click. It is the price of the only mechanism that survives
+the round trip.
+
+## Environment
+
+| | |
+|---|---|
+| `MDCAT_BIN` | mdcat to run, if not the one on `PATH` |
+| `MDNAV_IMAGE_PROTOCOL` | force `sixel`, `kitty`, `iterm2`, or `none` |
+| `MDNAV_FIFO` | where the click handler and the reader meet |
+| `MDNAV_SCHEME` | URL scheme, if `mdnav` collides with something |
+| `MDNAV_KEY_POLL` | key poll interval, in seconds |
+| `MDNAV_DEBUG` | write an execution trace to this file |
+
+mdcat's own image detection reports `ansi` on Windows Terminal even where sixel
+works, and then renders without images, silently. mdnav probes for itself and
+passes the answer explicitly; `install.sh` offers to set
+`MDCAT_IMAGE_PROTOCOL=sixel` in your shell rc so plain `mdcat` behaves too.
 
 ## Why not just…
 
 Things that look like they should work, and don't:
 
-- **`mdcat`'s own links.** mdcat renders local links as `file://<hostname>/path`
-  — correct per the OSC 8 spec, so that links resolve over SSH. Windows cannot
-  open that form, so on WSL every link fails with *"This link type is currently
-  not supported."* mdnav's custom scheme passes through mdcat untouched, which
-  `file://` does not.
-- **Registering `mdcat` as the `.md` handler.** Works, but every click opens a
-  new window — the thing you were trying to avoid.
-- **Mouse tracking (`\e[?1000h`) and mapping clicks to rows.** The terminal
-  does forward the clicks. But you cannot know which row a link landed on:
-  sixel images advance the cursor by an amount that lives inside the escape
-  sequence, not in the text, so counting lines cannot see it. Querying the
-  cursor afterwards (`\e[6n`) gives you an exact answer for the *last screenful*
-  only — for anything longer, the rest has already scrolled off. And enabling
-  mouse mode takes over the scroll wheel, so you cannot scroll to reach it.
+- **mdcat's own links.** mdcat renders local links as `file://<hostname>/path`
+  — correct per the OSC 8 spec, so links resolve over SSH. Windows cannot open
+  that form, so on WSL every link fails with *"This link type is currently not
+  supported."* A custom scheme passes through mdcat untouched; `file://` does
+  not.
+- **Registering mdcat as the `.md` handler.** Works, but every click opens a new
+  window — the thing you were trying to avoid.
+- **Piping to `less`.** `less -R` prints raw sixel as text, and `-r` passes it
+  through but miscounts line widths, so a kilobyte-long image line wraps across
+  a dozen rows. Sliced strips would fix the row counting, but not the width
+  arithmetic.
+- **Mouse tracking (`\e[?1000h`) for the wheel.** It works, and the terminal
+  still activates hyperlinks on ctrl+click while it is on. But scrollback
+  belongs to the terminal and cannot be driven from an application, so taking
+  the plain wheel means it only scrolls one way. Alternate scroll (`\e[?1007h`)
+  gets the wheel as arrow keys instead, and costs nothing.
+- **Printing everything and scrolling back to the top.** There is no way to move
+  the viewport: `CSI T` inserts blank lines and discards the bottom of the
+  buffer rather than restoring anything from scrollback.
 
 ## Limitations
 
 - One reader per user: a second `mdnav` takes over the FIFO, and clicks go to
   the newest one.
-- Reference-style links (`[a][b]` with a separate definition) are not rewritten;
-  inline `[a](b)` is.
+- Reference-style links (`[a][b]` with a separate definition) are not
+  rewritten; inline `[a](b)` is.
 - Links to non-Markdown files are handed to the desktop rather than rendered.
+- Slicing scales an image to the window width but not its height, so a tall
+  image is still taller than the screen — it scrolls rather than fitting.
