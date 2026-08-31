@@ -44,13 +44,14 @@ usage: mdnav [options] <file.md>
 
 keys:
   space, wheel   next screenful     q          quit
+  G              rest of the file, after which the wheel scrolls freely
   ctrl+click     follow a link      l          list links, pick by number
   backspace      back to previous file
-  r              reload             G          rest of the file at once
+  r              reload
 
-Scroll back with shift+wheel: the plain wheel advances the pager, and the
-scrollback stays the terminal's own. MDNAV_MOUSE=0 turns that off and
-leaves the plain wheel scrolling instead.
+While there is more to show, the plain wheel advances and shift+wheel
+scrolls back. Once the whole file is printed the wheel is handed back to
+the terminal and scrolls normally. MDNAV_MOUSE=0 never takes it at all.
 EOF
 }
 
@@ -195,6 +196,21 @@ prompt_line() {
 
 erase_prompt() { printf '\r\e[K'; }
 
+# The wheel is only borrowed. Once the whole document is printed there is
+# nothing left to advance to, so give it back and let the terminal scroll
+# its own scrollback -- in both directions, without shift.
+release_mouse() {
+    [ "$mouse_on" = 1 ] || return 0
+    printf '\e[?1006l\e[?1000l'
+    mouse_on=0
+}
+grab_mouse() {
+    [ "$mouse_on" = 0 ] || return 0
+    [ "${MDNAV_MOUSE:-1}" = 1 ] || return 0
+    printf '\e[?1000h\e[?1006h'
+    mouse_on=1
+}
+
 # Home and erase the screen, but NOT \e[3J -- which is what clear(1) sends
 # here, and it erases the scrollback along with it. The scrollback is where
 # everything already read lives, and is the whole point.
@@ -219,15 +235,6 @@ exec 3<>"$FIFO"
 stty_saved="$(stty -g 2>/dev/null || true)"
 raw_mode
 
-# Mouse reporting, for the wheel alone. This is safe here in a way it is
-# not generally: the terminal still activates hyperlinks on ctrl+click
-# while reporting is on, and shift+wheel still scrolls its own scrollback,
-# so nothing is taken away by claiming the plain wheel.
-if [ "${MDNAV_MOUSE:-1}" = 1 ]; then
-    printf '\e[?1000h\e[?1006h'
-    mouse_on=1
-fi
-
 load_buffer
 clear_screen
 fresh=1
@@ -240,6 +247,8 @@ while :; do
         mdnav_print_chunk "$avail"
         fresh=0
     fi
+
+    if mdnav_at_end; then release_mouse; else grab_mouse; fi
 
     prompt_line
 

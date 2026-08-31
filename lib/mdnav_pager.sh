@@ -31,15 +31,19 @@ mdnav_print_chunk() {
 
         case "$line" in
             *$'\eP'*|*$'\e_G'*)
-                # Images print inline with whatever preceded them: a sixel
-                # blob is one atomic escape, so it cannot be drawn in parts,
-                # but it scrolls the screen as it draws and the rest stays
-                # in scrollback -- which is what "partly visible" means here.
+                # A sixel blob is one atomic escape: the terminal draws the
+                # whole image at once, and these are routinely taller than
+                # the screen. Printing one after text therefore scrolls that
+                # text away in the same instant it appears -- which is why
+                # an image never shares a chunk with what precedes it. Text
+                # first, and the image on the next advance.
+                [ "$printed" -gt 0 ] && return 0
+
                 printf '%s\n' "$line"
                 BUFFER_INDEX=$(( BUFFER_INDEX + 1 ))
-                # End the chunk regardless: its height is decided by the
-                # terminal as it rasterises, so anything printed after it
-                # would be counted against a screen it has already filled.
+                # Its height is decided by the terminal as it rasterises, so
+                # anything printed after it would be counted against a screen
+                # it has already filled.
                 return 0 ;;
         esac
 
