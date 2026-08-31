@@ -38,6 +38,29 @@ Requires `mdcat`, `python3`, and bash 4.3+ (macOS ships bash 3.2; use
 `~/.local/bin` and registers the `mdnav://` scheme with your desktop.
 `./uninstall.sh` removes both, including the registry keys on WSL.
 
+### Locked-down machines
+
+Clicking needs the `mdnav://` scheme registered, and on Windows the registry is
+the only mechanism for that. The keys go under `HKEY_CURRENT_USER`, so no admin
+rights are involved and it usually works on managed laptops — but some are
+locked down further.
+
+If the write fails, `install.sh` says so and leaves everything else working. It
+also writes `mdnav-install.reg` and `mdnav-uninstall.reg` into
+`%LOCALAPPDATA%\mdnav\`, so you can review the change, apply it by
+double-clicking, or hand it to whoever administers the machine. It adds nothing
+outside `HKEY_CURRENT_USER\Software\Classes\mdnav`.
+
+To skip registration entirely:
+
+```
+./install.sh --no-scheme
+```
+
+mdnav works without it — you follow links with `l` and a number rather than by
+clicking. You don't need to install anything at all for that; `./bin/mdnav` runs
+as-is.
+
 ## How it works
 
 The trick is that the *terminal* has to tell a *running program* that you

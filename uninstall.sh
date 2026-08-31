@@ -15,14 +15,27 @@ say "removed symlinks from $bindir"
 rm -f "${XDG_RUNTIME_DIR:-/tmp}/mdnav-$(id -u).fifo"
 
 if is_wsl; then
+    left_behind=0
     if reg.exe query 'HKCU\Software\Classes\mdnav' >/dev/null 2>&1; then
-        reg.exe delete 'HKCU\Software\Classes\mdnav' /f >/dev/null
-        say "removed HKCU\\Software\\Classes\\mdnav"
+        if reg.exe delete 'HKCU\Software\Classes\mdnav' /f >/dev/null 2>&1; then
+            say "removed HKCU\\Software\\Classes\\mdnav"
+        else
+            left_behind=1
+        fi
     fi
     appdata="$(cmd.exe /c 'echo %LOCALAPPDATA%' 2>/dev/null | tr -d '\r')"
     if [ -n "$appdata" ]; then
         target="$(wslpath -u "$appdata")/mdnav"
-        [ -d "$target" ] && rm -rf "$target" && say "removed $target"
+        if [ "$left_behind" = 1 ]; then
+            # Keep the folder: the .reg file in it is how they undo this.
+            echo
+            echo "could not remove the registry key. To do it by hand, run:"
+            echo "  $appdata\\mdnav\\mdnav-uninstall.reg"
+            echo "(leaving $appdata\\mdnav in place, since that file lives there)"
+        elif [ -d "$target" ]; then
+            rm -rf "$target"
+            say "removed $target"
+        fi
     fi
 else
     appdir="$HOME/.local/share/applications"
