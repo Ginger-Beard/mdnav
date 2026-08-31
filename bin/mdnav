@@ -610,8 +610,7 @@ while :; do
             fi ;;
         char:0|char:1|char:2|char:3|char:4|char:5|char:6|char:7|char:8|char:9)
             COUNT="$COUNT${KEY#char:}"
-            SEARCH_MSG="line $COUNT"
-            status ;;
+            printf '\e[%d;1H\e[K:%s' "$rows" "$COUNT" ;;
         home|char:g)
             if [ -n "$COUNT" ]; then
                 top=$(( COUNT - 1 ))
@@ -654,7 +653,9 @@ while :; do
             draw_all; status ;;
         "char::")
             # In less, : is a prefix: the command runs on the next key, with
-            # no return to press.
+            # no return to press. Show it while that key is awaited, so the
+            # prefix is visibly pending rather than swallowed.
+            printf '\e[%d;1H\e[K:' "$rows"
             if read_key_wait; then
                 case "$KEY" in
                     char:q|char:x) break ;;
