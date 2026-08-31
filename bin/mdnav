@@ -252,35 +252,56 @@ apply_search() {
     return 2
 }
 
-# Next match in <dir> from where we are, wrapping round the ends.
-jump_to_match() {
-    local dir="$1" i target=-1 pos=-1 idx=0
-    [ ${#MATCHES[@]} -gt 0 ] || return 1
-    if [ "$dir" = 1 ]; then
-        for i in "${MATCHES[@]}"; do
-            if [ "$i" -gt "$top" ]; then target="$i"; pos="$idx"; break; fi
-            idx=$(( idx + 1 ))
-        done
-        if [ "$target" -lt 0 ]; then target="${MATCHES[0]}"; pos=0; fi
-    else
-        for i in "${MATCHES[@]}"; do
-            if [ "$i" -lt "$top" ]; then target="$i"; pos="$idx"; fi
-            idx=$(( idx + 1 ))
-        done
-        if [ "$target" -lt 0 ]; then
-            pos=$(( ${#MATCHES[@]} - 1 ))
-            target="${MATCHES[$pos]}"
-        fi
-    fi
-    # Which match is current, before the top is clamped -- the line stays on
-    # screen either way, and this is what gets the brighter marking.
-    ACTIVE_MATCH="$target"
+# Which match we are on is tracked as a position in the list, not as a
+# scroll offset. The two part company at the end of a document: the view
+# cannot scroll past the last screenful, so several matches can share the
+# same top, and stepping by scroll offset gets stuck on the first of them.
+set_match() {
+    local pos="$1" len=${#MATCHES[@]}
+    [ "$len" -gt 0 ] || return 1
+    [ "$pos" -lt 0 ] && pos=$(( len - 1 ))
+    [ "$pos" -ge "$len" ] && pos=0
     MATCH_POS="$pos"
-    [ "$target" -gt "$MT" ] && target="$MT"
-    top="$target"
+    ACTIVE_MATCH="${MATCHES[$pos]}"
+    top="$ACTIVE_MATCH"
+    [ "$top" -gt "$MT" ] && top="$MT"
     return 0
 }
 
+# Where a freshly typed search lands: the first match beyond the view.
+match_from_view() {
+    local dir="$1" i idx=0 pos=-1
+    [ ${#MATCHES[@]} -gt 0 ] || return 1
+    if [ "$dir" = 1 ]; then
+        for i in "${MATCHES[@]}"; do
+            if [ "$i" -gt "$top" ]; then pos="$idx"; break; fi
+            idx=$(( idx + 1 ))
+        done
+        [ "$pos" -lt 0 ] && pos=0
+    else
+        for i in "${MATCHES[@]}"; do
+            [ "$i" -lt "$top" ] && pos="$idx"
+            idx=$(( idx + 1 ))
+        done
+        [ "$pos" -lt 0 ] && pos=$(( ${#MATCHES[@]} - 1 ))
+    fi
+    set_match "$pos"
+}
+
+# n and N: one along the list, wrapping at either end.
+step_match() {
+    local dir="$1"
+    [ ${#MATCHES[@]} -gt 0 ] || return 1
+    if [ "$MATCH_POS" -lt 0 ]; then
+        match_from_view "$dir"
+        return $?
+    fi
+    if [ "$dir" = 1 ]; then
+        set_match $(( MATCH_POS + 1 ))
+    else
+        set_match $(( MATCH_POS - 1 ))
+    fi
+}
 
 # Typing a pattern is a line edit, so the terminal does it.
 read_pattern() {
@@ -299,7 +320,7 @@ run_search() {   # <direction> <prompt>
     SEARCH_DIR="$dir"
     apply_search; rc=$?
     case "$rc" in
-        0) SEARCH_MSG=""; [ -n "$SEARCH_PAT" ] && jump_to_match "$dir" ;;
+        0) SEARCH_MSG=""; [ -n "$SEARCH_PAT" ] && match_from_view "$dir" ;;
         1) SEARCH_MSG="not found" ;;
         2) SEARCH_MSG="bad pattern" ;;
     esac
@@ -385,6 +406,7 @@ status() {
         left="$left  /${SEARCH_PAT}: ${SEARCH_MSG}"
     elif [ -n "$SEARCH_PAT" ] && [ "$MATCH_POS" -ge 0 ]; then
         left="$left  /${SEARCH_PAT} [$(( MATCH_POS + 1 ))/${#MATCHES[@]}]"
+        [ "$HILITE" = all ] || left="$left -${HILITE}"
     elif [ -n "$SEARCH_PAT" ]; then
         left="$left  /${SEARCH_PAT} (${#MATCHES[@]})"
     fi
@@ -520,13 +542,13 @@ while :; do
         char:n)
             if [ -n "$SEARCH_PAT" ]; then
                 SEARCH_MSG=""
-                jump_to_match "$SEARCH_DIR" || SEARCH_MSG="not found"
+                step_match "$SEARCH_DIR" || SEARCH_MSG="not found"
                 draw_all; status
             fi ;;
         char:N)
             if [ -n "$SEARCH_PAT" ]; then
                 SEARCH_MSG=""
-                jump_to_match $(( SEARCH_DIR * -1 )) || SEARCH_MSG="not found"
+                step_match $(( SEARCH_DIR * -1 )) || SEARCH_MSG="not found"
                 draw_all; status
             fi ;;
         escape)
