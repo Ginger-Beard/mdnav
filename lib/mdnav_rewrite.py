@@ -77,7 +77,43 @@ def tidy_html(text):
     return "".join(out)
 
 
-def absolutize(text, base):
+def find_target(target, *bases):
+    """Where a relative path actually points.
+
+    A file pulled in from elsewhere carries paths written for wherever it
+    was meant to sit, and they routinely climb past the top of the tree --
+    resolved literally they become a path outside it that exists nowhere.
+    Try each plausible base, then look for the tail of the path in the
+    directories above the document, and give up rather than inventing an
+    answer that happens to be a valid string."""
+    for base in bases:
+        if not base:
+            continue
+        candidate = os.path.realpath(os.path.join(base, target))
+        if os.path.exists(candidate):
+            return candidate
+
+    tail = target
+    while tail.startswith("./") or tail.startswith("../"):
+        tail = tail[2:] if tail.startswith("./") else tail[3:]
+    if not tail:
+        return None
+    for base in bases:
+        if not base:
+            continue
+        here = base
+        for _ in range(8):
+            candidate = os.path.join(here, tail)
+            if os.path.exists(candidate):
+                return os.path.realpath(candidate)
+            parent = os.path.dirname(here)
+            if parent == here:
+                break
+            here = parent
+    return None
+
+
+def absolutize(text, base, doc_dir=None):
     """Resolve a chunk's relative targets against its own directory, so it
     still points where it meant to once inlined elsewhere."""
     def fix(m):
@@ -87,7 +123,12 @@ def absolutize(text, base):
         path = target.split("#", 1)[0]
         if not path:
             return m.group(0)
-        return "{}{}{})".format(head, os.path.realpath(os.path.join(base, path)), title)
+        found = find_target(path, base, doc_dir)
+        if found is None:
+            # Leave it as written: a wrong absolute path is worse than an
+            # unresolved relative one, which at least says what it meant.
+            return m.group(0)
+        return "{}{}{})".format(head, found, title)
     return TARGET_RE.sub(fix, text)
 
 
@@ -118,7 +159,7 @@ def expand_includes(text, base, depth=0):
             except ValueError:
                 pass  # a named anchor rather than line numbers: take it whole
         content = expand_includes(content, os.path.dirname(target), depth + 1)
-        return absolutize(content, os.path.dirname(target))
+        return absolutize(content, os.path.dirname(target), base)
 
     return INCLUDE_RE.sub(repl, text)
 
@@ -143,7 +184,9 @@ def main():
         path = target.split("#", 1)[0]
         if not path:
             return None
-        return os.path.realpath(os.path.join(srcdir, path))
+        # Nothing there: leave the target as the document wrote it. An
+        # absolute path to a file that does not exist only looks authoritative.
+        return find_target(path, srcdir)
 
     def fix_image(m):
         alt, target, title = m.group(1), m.group(2), m.group(3) or ""
