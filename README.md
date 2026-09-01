@@ -322,7 +322,10 @@ Things that look like they should work, and don't:
 - A link to a place in the same document (`[see](#section)`) scrolls there,
   and the heading it lands on is marked until you scroll — near the end of a
   file the view cannot put it at the top, so it is worth being told where to
-  start reading.
+  start reading. A numbered citation (`[[21]](#references)`, which is how
+  Markdown documents cite, having no anchor per item) lands on item 21 in that
+  section rather than on the heading, falling back to the heading if there is
+  no such item.
   Anchors are matched to headings the way GitHub and mdBook spell them; a
   link naming a heading that does not exist is left as plain text rather
   than as a link that cannot go anywhere.

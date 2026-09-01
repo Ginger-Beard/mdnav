@@ -222,10 +222,18 @@ def main():
             slug = anchor_slug(target[1:])
             if slug not in anchors:
                 return label
-            links.append({"label": label, "path": "#" + slug})
+            # A citation marker names an item, while the anchor names only
+            # the section holding it -- Markdown has no anchor per item, so
+            # documents point every citation at the same heading. The label
+            # is the missing half: carry it along and land on the item.
+            item = re.sub(r"[\[\]]", "", label).strip()
+            target = "#" + slug
+            if re.fullmatch(r"\d{1,4}", item):
+                target += "|" + item
+            links.append({"label": label, "path": target})
             if not scheme:
                 return label
-            uri = "{}://{}/{}".format(scheme, instance, quote("#" + slug))
+            uri = "{}://{}/{}".format(scheme, instance, quote(target))
             return "[{}]({}{})".format(label, uri, title)
         path = local_path(target)
         if path is None:

@@ -39,9 +39,11 @@ def normalise(text):
 
 def main():
     anchors_file, slug, buffer_file = sys.argv[1:4]
+    # "#section|21": the section to find, and the item within it to prefer.
+    slug, _, item = slug.lstrip("#").partition("|")
     try:
         with open(anchors_file, encoding="utf-8") as fh:
-            text = json.load(fh).get(slug.lstrip("#"))
+            text = json.load(fh).get(slug)
     except (OSError, ValueError):
         return 1
     if not text:
@@ -50,14 +52,33 @@ def main():
     want = normalise(text)
     if not want:
         return 1
-    with open(buffer_file, "rb") as fh:
-        for index, raw in enumerate(fh.read().split(b"\n")):
-            # The whole line, not a part of it: "References" must not be
-            # answered by a line mentioning preferences.
-            if normalise(ESCAPES.sub(b"", raw).decode("utf-8", "replace")) == want:
+
+    lines = [normalise(ESCAPES.sub(b"", raw).decode("utf-8", "replace"))
+             for raw in open(buffer_file, "rb").read().split(b"\n")]
+
+    heading = None
+    for index, line in enumerate(lines):
+        # The whole line, not a part of it: "References" must not be
+        # answered by a line mentioning preferences.
+        if line == want:
+            heading = index
+            break
+    if heading is None:
+        return 1
+
+    if item:
+        # The item as the section lists it: "- [21] Title" reduces to
+        # "21 title". Only below the heading, and only in what follows it.
+        for index in range(heading + 1, min(len(lines), heading + 500)):
+            # "- [21] Title" reduces to "21] title": the number is there,
+            # but whatever punctuation the list uses comes straight after
+            # it, so match the number as a word rather than a prefix.
+            if re.match(re.escape(item) + r"\b", lines[index]):
                 print(index)
                 return 0
-    return 1
+
+    print(heading)
+    return 0
 
 
 if __name__ == "__main__":
