@@ -218,6 +218,39 @@ def bracket_spaced(text, *bases):
     return SPACED_RE.sub(fix, text)
 
 
+# The delimiter row that makes the line above it a table header, and so
+# makes a table a table.
+TABLE_DELIM_RE = re.compile(r"^\s*\|?\s*:?-+:?\s*(?:\|\s*:?-+:?\s*)*\|?\s*$")
+
+
+def table_spans(text):
+    """Character ranges of each table, in the order they are written.
+
+    A link inside a table has to be matched against the right table once
+    rendered, and a table is identified by its position among the others:
+    the first table written is the first table drawn.
+    """
+    lines = text.split("\n")
+    offsets = []
+    pos = 0
+    for line in lines:
+        offsets.append(pos)
+        pos += len(line) + 1
+    spans = []
+    index = 0
+    while index < len(lines):
+        head, delim = lines[index], lines[index + 1] if index + 1 < len(lines) else ""
+        if "|" in head and "|" in delim and TABLE_DELIM_RE.match(delim):
+            end = index + 2
+            while end < len(lines) and lines[end].strip() and "|" in lines[end]:
+                end += 1
+            spans.append((offsets[index], offsets[end - 1] + len(lines[end - 1])))
+            index = end
+        else:
+            index += 1
+    return spans
+
+
 def spellings(target):
     """The same target as the document wrote it, and as the filesystem
     spells it. An editor inserting a link percent-encodes the spaces in a
@@ -388,9 +421,19 @@ def main():
             return m.group(0)
         return "![{}]({}{})".format(alt, as_dest(path), title)
 
+    table_ranges = []
+
+    def in_table(at):
+        """Index of the table this link sits in, or None if it sits in none."""
+        for number, (start, end) in enumerate(table_ranges):
+            if start <= at < end:
+                return number
+        return None
+
     def fix_link(m):
         label, title = m.group("label"), m.group("title") or ""
         target = destination(m)
+        table = in_table(m.start())
         if target.startswith("#"):
             # A place in this same document. Followed here rather than
             # handed to the desktop, which can only read it as a file that
@@ -427,7 +470,7 @@ def main():
                     label, as_dest(srcfile + "#" + slug), title)
             uri = "{}://{}/{}".format(scheme, instance, quote(target))
             links.append({"label": label, "path": target, "uri": uri,
-                          "text": heading_text(label)})
+                          "text": heading_text(label), "table": table})
             return "[{}]({}{})".format(label, uri, title)
         path = local_path(target)
         if path is None:
@@ -453,7 +496,7 @@ def main():
             return "[{}]({}{})".format(label, as_dest(path), title)
         uri = "{}://{}{}".format(scheme, instance, quote(path))
         links.append({"label": label, "path": path, "uri": uri,
-                      "text": heading_text(label)})
+                      "text": heading_text(label), "table": table})
         return "[{}]({}{})".format(label, uri, title)
 
     text = expand_includes(text, srcdir)
@@ -464,6 +507,9 @@ def main():
     text = REF_RE.sub(lambda m: "[{}]({})".format(m.group(1), m.group(1)), text)
     text = bracket_spaced(text, srcdir)
     text = IMAGE_RE.sub(fix_image, text)
+    # Worked out on the text the links are about to be read from, so the
+    # offsets are the ones fix_link will be given.
+    table_ranges[:] = table_spans(text)
     text = LINK_RE.sub(fix_link, text)
 
     with open(out_md, "w", encoding="utf-8") as f:

@@ -22,6 +22,7 @@ usage: mdnav_tablelinks.py <buffer> <links.json>
 """
 
 import json
+import os
 import re
 import sys
 
@@ -62,29 +63,28 @@ def is_rule(text):
     return bool(stripped) and set(stripped) <= RULE_CHARS
 
 
-def table_rows(lines):
-    """Indices of lines inside a table.
+def table_regions(lines):
+    """The line range of each table drawn, in the order they were drawn.
 
     A rule opens one; it runs to the last rule before the blank line that
     ends it, which keeps a cell spanning several lines inside the table
     and a paragraph after it outside.
     """
-    inside = set()
+    regions = []
     index = 0
     while index < len(lines):
         if not is_rule(lines[index]):
             index += 1
             continue
-        start = index
         last_rule = index
         scan = index + 1
         while scan < len(lines) and lines[scan].strip():
             if is_rule(lines[scan]):
                 last_rule = scan
             scan += 1
-        inside.update(range(start, last_rule + 1))
+        regions.append((index, last_rule))
         index = max(scan, last_rule + 1)
-    return inside
+    return regions
 
 
 def main():
@@ -97,10 +97,6 @@ def main():
 
     # The label as drawn, not as written: a cell shows "Bold Doc" where the
     # document said "**Bold Doc**", and it is the drawn form being searched.
-    wanted = [l for l in links
-              if l.get("uri") and (l.get("text") or l.get("label", "")).strip()]
-    if not wanted:
-        return 0
 
     with open(buffer_file, "rb") as fh:
         raw = fh.read()
@@ -114,35 +110,57 @@ def main():
             if uri:
                 present[uri] = present.get(uri, 0) + 1
 
+    # Counted against every link, not only the ones in tables: the same
+    # target may be linked from a paragraph as well, and that link's
+    # hyperlink is not the table's. Each one emitted is credited to the
+    # earliest link that asked for it, which is the one that got it.
+    #
+    # Only a link in a table is ever put back. Everywhere else a link
+    # survives rendering, so a missing one is not a thing to go hunting
+    # for by its text.
     missing = []
-    for link in wanted:
-        uri = link["uri"]
+    for link in links:
+        uri = link.get("uri")
+        if not uri:
+            continue
         if present.get(uri):
             present[uri] -= 1
-        else:
+            continue
+        if link.get("table") is not None and (
+                link.get("text") or link.get("label", "")).strip():
             missing.append(link)
     if not missing:
         return 0
 
-    rows = table_rows([ESCAPES.sub(b"", l).decode("utf-8", "replace") for l in lines])
-    if not rows:
+    regions = table_regions(
+        [ESCAPES.sub(b"", l).decode("utf-8", "replace") for l in lines])
+    # The nth table written is the nth table drawn. If they cannot be
+    # counted the same way, nothing here is trustworthy and nothing is
+    # done: a link attached to the wrong row is worse than a plain one.
+    if not regions or max(l["table"] for l in missing) >= len(regions):
         return 0
 
     # Insertions are collected first and applied from the back, so an
     # earlier offset is still an offset into the line it was measured in.
     edits = {}
     taken = set()
-    search_from = 0
     for link in missing:
         label = " ".join((link.get("text") or link["label"]).split())
         if not label:
             continue
+        # Only within the table this link was written in. Searching past
+        # the end of it would let a link whose text the layout wrapped --
+        # and which therefore cannot be found at all -- be answered by the
+        # same words in a later table, pointing that one somewhere wrong.
+        first, last = regions[link["table"]]
         placed = False
-        for index in sorted(i for i in rows if i >= search_from):
+        for index in range(first, last + 1):
             text, offsets = plain(lines[index])
-            start = 0
+            # Two links can share a row, so a row is searched from the
+            # column after the last one claimed in it, not from its start.
+            from_col = 0
             while True:
-                at = text.find(label, start)
+                at = text.find(label, from_col)
                 if at < 0:
                     break
                 if (index, at) not in taken:
@@ -151,11 +169,8 @@ def main():
                         (offsets[at], offsets[at + len(label)], link["uri"]))
                     placed = True
                     break
-                start = at + 1
+                from_col = at + 1
             if placed:
-                # Later links are looked for from here on, so the rows are
-                # walked once and in the order the links were written.
-                search_from = index
                 break
 
     if not edits:
@@ -176,5 +191,15 @@ def main():
 if __name__ == "__main__":
     try:
         sys.exit(main())
-    except Exception:
+    except Exception as error:
+        # Failing here costs the table its links and nothing else, so it is
+        # not worth stopping over -- but it went unnoticed once already, so
+        # it says so where the rest of the tracing goes.
+        debug = os.environ.get("MDNAV_DEBUG", "")
+        if debug:
+            try:
+                with open(debug, "a", encoding="utf-8") as fh:
+                    fh.write("mdnav: table links: {}\n".format(error))
+            except OSError:
+                pass
         sys.exit(0)

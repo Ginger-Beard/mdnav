@@ -335,9 +335,10 @@ Things that look like they should work, and don't:
   place a link stops being one; mdnav knows what it wrote, so it compares
   that against what came out and re-attaches the difference. Only inside a
   table, only where the text is found, and only for links that went
-  missing -- so a future mdcat that carries them itself changes nothing
-  here. A label the table had to wrap across lines is left alone; it is
-  still reachable from `l`.
+  missing, in the table it was written in -- so a future mdcat that
+  carries them itself changes nothing here. A label the table had to wrap
+  across lines is left alone rather than guessed at; it is still reachable
+  from `l`. Not done in `-c`, which hands rendering straight to mdcat.
 - A link to a place in the same document (`[see](#section)`) scrolls there,
   and the heading it lands on is marked until you scroll — near the end of a
   file the view cannot put it at the top, so it is worth being told where to
