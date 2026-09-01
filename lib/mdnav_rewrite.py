@@ -19,9 +19,59 @@ import json
 import os
 import re
 import sys
-from urllib.parse import quote
+from urllib.parse import quote, unquote
 
-IMAGE_RE = re.compile(r"!\[([^\]]*)\]\(([^)\s]+)(\s+\"[^\"]*\")?\)")
+# A target that resolves to nothing is shown as plain text rather than as
+# a link, which is right -- but it makes a link the tool cannot handle look
+# exactly like a link the document got wrong, and the difference is only
+# findable by bisecting the file. Set MDNAV_DEBUG to a path to be told
+# instead. Never written to stderr: the pager owns the screen, and a line
+# sent there lands in the middle of the document.
+DEBUG = os.environ.get("MDNAV_DEBUG", "")
+SOURCE = ""
+
+
+def note(fmt, *args):
+    """A line in the same trace file the pager writes, appended rather than
+    printed: the pager owns the screen, and a line sent to stderr lands in
+    the middle of the document. Prefixed, so it can be picked out of the
+    shell trace around it."""
+    if not DEBUG:
+        return
+    try:
+        with open(DEBUG, "a", encoding="utf-8") as fh:
+            fh.write("mdnav: {}: {}\n".format(
+                os.path.basename(SOURCE) or "?", fmt.format(*args)))
+    except OSError:
+        pass
+
+
+# Where a link points, in either of the two spellings CommonMark gives it:
+# bracketed, which may contain spaces, or a bare run that may not. A path
+# with a space in it is ordinary on a desktop, and only the first spelling
+# can carry one.
+DEST = r"(?:<(?P<angle>[^<>\n]*)>|(?P<bare>[^)\s]+))"
+TITLE = r"(?P<title>\s+\"[^\"]*\")?"
+
+
+def destination(m):
+    """The target of whichever spelling matched."""
+    angle = m.group("angle")
+    return angle if angle is not None else m.group("bare")
+
+
+def as_dest(path):
+    """A path written so that reading it back gives the path again. Bare, a
+    space ends the destination and the rest becomes a title that is not
+    one."""
+    if not re.search(r"\s", path):
+        return path
+    if "<" not in path and ">" not in path:
+        return "<{}>".format(path)
+    return quote(path)
+
+
+IMAGE_RE = re.compile(r"!\[(?P<alt>[^\]]*)\]\(" + DEST + TITLE + r"\)")
 # mdBook's cross-reference directive, which a preprocessor would replace
 # before rendering. Read raw -- as anyone browsing such a repository is --
 # it is a dead line of text naming a file. Turned into a link, it is the
@@ -34,8 +84,10 @@ INCLUDE_RE = re.compile(r"\{\{#(?:rustdoc_)?include\s+([^}\s]+)\s*\}\}")
 # absolute before it is pasted somewhere else.
 # A label can hold brackets of its own -- [[21]](#ref) is a reference
 # marker written as a link -- so one level of nesting is allowed for.
-TARGET_RE = re.compile(r"(!?\[(?:[^\[\]]|\[[^\[\]]*\])*\]\()([^)\s]+)(\s+\"[^\"]*\")?\)")
-LINK_RE = re.compile(r"(?<!!)\[((?:[^\[\]]|\[[^\[\]]*\])*)\]\(([^)\s]+)(\s+\"[^\"]*\")?\)")
+TARGET_RE = re.compile(
+    r"(?P<head>!?\[(?:[^\[\]]|\[[^\[\]]*\])*\]\()" + DEST + TITLE + r"\)")
+LINK_RE = re.compile(
+    r"(?<!!)\[(?P<label>(?:[^\[\]]|\[[^\[\]]*\])*)\]\(" + DEST + TITLE + r"\)")
 URL_RE = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.-]*:")
 HEADING_RE = re.compile(r"^(#{1,6})[ \t]+(.+?)[ \t]*#*[ \t]*$", re.MULTILINE)
 # What a heading is called once it is a link target: lowercased, stripped of
@@ -117,6 +169,49 @@ def source_variants(path):
         yield path + "index.md"
 
 
+# A bare destination stops at the first space, so a path with a space in it
+# is not a destination at all and the whole construct is not a link -- by
+# the spec, correctly so. It is also what every file manager puts on the
+# clipboard, so documents are full of them. Accepted here on one condition:
+# it has to name a file that exists. Without that condition, any
+# parenthesised prose after a bracketed word would be read as a path.
+SPACED_RE = re.compile(
+    r"(?P<head>!?\[(?:[^\[\]]|\[[^\[\]]*\])*\]\()(?P<inner>[^)<>\n]*\s[^)<>\n]*)\)")
+
+
+def bracket_spaced(text, *bases):
+    """Give a spaced destination that names a real file the one spelling
+    that can carry it, so everything downstream sees an ordinary link."""
+    def fix(m):
+        head, inner = m.group("head"), m.group("inner")
+        if inner.startswith("#") or URL_RE.match(inner.strip()):
+            return m.group(0)
+        # A destination the parser can already read, followed by a title.
+        first = inner.split()[0] if inner.split() else ""
+        if first and find_target(first.split("#", 1)[0], *bases):
+            return m.group(0)
+        options = [(inner.strip(), "")]
+        split = re.match(r'^(.*?)(\s+"[^"]*")$', inner)
+        if split:
+            options.append((split.group(1).strip(), split.group(2)))
+        for candidate, title in options:
+            if candidate and find_target(candidate.split("#", 1)[0], *bases):
+                return "{}<{}>{})".format(head, candidate, title)
+        note("target {!r}: has a space and names nothing", inner)
+        return m.group(0)
+    return SPACED_RE.sub(fix, text)
+
+
+def spellings(target):
+    """The same target as the document wrote it, and as the filesystem
+    spells it. An editor inserting a link percent-encodes the spaces in a
+    path; the file on disk still has spaces in its name."""
+    yield target
+    decoded = unquote(target)
+    if decoded != target:
+        yield decoded
+
+
 def find_target(target, *bases):
     """Where a relative path actually points.
 
@@ -126,6 +221,14 @@ def find_target(target, *bases):
     Try each plausible base, then look for the tail of the path in the
     directories above the document, and give up rather than inventing an
     answer that happens to be a valid string."""
+    for spelling in spellings(target):
+        found = resolve_one(spelling, bases)
+        if found is not None:
+            return found
+    return None
+
+
+def resolve_one(target, bases):
     for base in bases:
         if not base:
             continue
@@ -165,7 +268,8 @@ def absolutize(text, base, doc_dir=None):
     """Resolve a chunk's relative targets against its own directory, so it
     still points where it meant to once inlined elsewhere."""
     def fix(m):
-        head, target, title = m.group(1), m.group(2), m.group(3) or ""
+        head, title = m.group("head"), m.group("title") or ""
+        target = destination(m)
         if URL_RE.match(target) or target.startswith("#"):
             return m.group(0)
         path = target.split("#", 1)[0]
@@ -176,7 +280,7 @@ def absolutize(text, base, doc_dir=None):
             # Leave it as written: a wrong absolute path is worse than an
             # unresolved relative one, which at least says what it meant.
             return m.group(0)
-        return "{}{}{})".format(head, found, title)
+        return "{}{}{})".format(head, as_dest(found), title)
     return TARGET_RE.sub(fix, text)
 
 
@@ -213,7 +317,9 @@ def expand_includes(text, base, depth=0):
 
 
 def main():
+    global SOURCE
     src, out_md, out_links, scheme = sys.argv[1:5]
+    SOURCE = src
     # Which mdnav rendered this. Carried in the URI so a click goes back to
     # the window it was clicked in, however many are running.
     instance = os.environ.get("MDNAV_INSTANCE", "")
@@ -251,14 +357,17 @@ def main():
         return find_target(path, srcdir)
 
     def fix_image(m):
-        alt, target, title = m.group(1), m.group(2), m.group(3) or ""
+        alt, title = m.group("alt"), m.group("title") or ""
+        target = destination(m)
         path = local_path(target)
         if path is None:
+            note("image {!r}: nothing there", target)
             return m.group(0)
-        return "![{}]({}{})".format(alt, path, title)
+        return "![{}]({}{})".format(alt, as_dest(path), title)
 
     def fix_link(m):
-        label, target, title = m.group(1), m.group(2), m.group(3) or ""
+        label, title = m.group("label"), m.group("title") or ""
+        target = destination(m)
         if target.startswith("#"):
             # A place in this same document. Followed here rather than
             # handed to the desktop, which can only read it as a file that
@@ -267,6 +376,7 @@ def main():
             if slug not in anchors:
                 slug = loose.get(re.sub(r"-+", "-", slug))
                 if slug is None:
+                    note("anchor {!r}: no heading of that name", target)
                     return label
             # A citation marker names an item, while the anchor names only
             # the section holding it -- Markdown has no anchor per item, so
@@ -285,6 +395,7 @@ def main():
         if path is None:
             if URL_RE.match(target):
                 return m.group(0)
+            note("link {!r}: nothing there", target)
             # A local target that resolves to nothing: shown as text, not as
             # a link. Left as a link, it would be resolved against the copy
             # being rendered and become a path into the temp directory --
@@ -294,7 +405,7 @@ def main():
         if not scheme:
             # Nothing is listening for a click, so the path itself is the
             # honest target -- the scheme would only show as noise.
-            return "[{}]({}{})".format(label, path, title)
+            return "[{}]({}{})".format(label, as_dest(path), title)
         uri = "{}://{}{}".format(scheme, instance, quote(path))
         return "[{}]({}{})".format(label, uri, title)
 
@@ -304,6 +415,7 @@ def main():
     # Rewritten into ordinary Markdown links first, so the same handling
     # applies to them as to anything else.
     text = REF_RE.sub(lambda m: "[{}]({})".format(m.group(1), m.group(1)), text)
+    text = bracket_spaced(text, srcdir)
     text = IMAGE_RE.sub(fix_image, text)
     text = LINK_RE.sub(fix_link, text)
 

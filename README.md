@@ -237,7 +237,7 @@ the round trip.
 | `MDNAV_WHEEL_LINES` | lines per wheel notch (default 3); `-1` for a screen |
 | `MDNAV_MOUSE` | `0` to leave the wheel to the terminal |
 | `MDNAV_KEY_POLL` | key poll interval, in seconds |
-| `MDNAV_DEBUG` | write an execution trace to this file |
+| `MDNAV_DEBUG` | write an execution trace to this file, and a line for every link dropped |
 
 mdcat's own image detection reports `ansi` on Windows Terminal even where sixel
 works, and then renders without images, silently. mdnav probes for itself and
