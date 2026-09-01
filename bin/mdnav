@@ -120,6 +120,7 @@ SEARCH_MSG=""
 COUNT=""
 LAST_MTIME=""
 WATCH_TICK=0
+ANCHOR_LINE=-1
 ACTIVE_MATCH=-1
 ACTIVE_OCC=-1
 ACTIVE_RENDER=""
@@ -445,9 +446,19 @@ goto_anchor() {
     line="$(python3 "$LIB/mdnav_anchor.py" "$work/links.json.anchors" "$1" \
               "$work/buffer.ansi" 2>/dev/null)" || return 1
     [ -n "$line" ] || return 1
+    # Marked so the reader can see where they have landed -- the heading is
+    # not always at the top, since the view cannot scroll past the end.
+    ANCHOR_LINE="$line"
     top="$line"
     [ "$top" -gt "$MT" ] && top="$MT"
     return 0
+}
+
+# Reverse video over the whole line, reapplied after each reset the line
+# carries of its own, so the mark survives the styling already in it.
+anchor_render() {
+    local l="${1//$'\e[0m'/$'\e[0m\e[7m'}"
+    printf '\e[7m%s\e[0m' "$l"
 }
 
 goto() {
@@ -483,7 +494,9 @@ draw_line() {   # <screen row> <buffer index>
     local srow="$1" i="$2"
     printf '\e[%d;1H\e[0m\e[K' "$srow"
     [ "$i" -lt "${#BUF[@]}" ] || return 0
-    if [ "$i" = "$ACTIVE_MATCH" ] && [ -n "$ACTIVE_RENDER" ]; then
+    if [ "$i" = "$ANCHOR_LINE" ]; then
+        anchor_render "${BUF[$i]}"
+    elif [ "$i" = "$ACTIVE_MATCH" ] && [ -n "$ACTIVE_RENDER" ]; then
         printf '%s' "$ACTIVE_RENDER"
     elif [ "$HILITE" = all ] && [ "$i" -lt "${#HLBUF[@]}" ]; then
         printf '%s' "${HLBUF[$i]}"
@@ -677,6 +690,7 @@ while :; do
     done
 
     if [ "$moved" = 1 ]; then
+        ANCHOR_LINE=-1
         new=$(( top + delta ))
         [ "$new" -lt 0 ] && new=0
         [ "$new" -gt "$mt" ] && new="$mt"

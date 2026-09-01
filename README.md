@@ -319,7 +319,10 @@ Things that look like they should work, and don't:
 
 - Reference-style links (`[a][b]` with a separate definition) are not
   rewritten; inline `[a](b)` is.
-- A link to a place in the same document (`[see](#section)`) scrolls there.
+- A link to a place in the same document (`[see](#section)`) scrolls there,
+  and the heading it lands on is marked until you scroll — near the end of a
+  file the view cannot put it at the top, so it is worth being told where to
+  start reading.
   Anchors are matched to headings the way GitHub and mdBook spell them; a
   link naming a heading that does not exist is left as plain text rather
   than as a link that cannot go anywhere.
