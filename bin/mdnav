@@ -194,35 +194,66 @@ link_count() { python3 -c 'import json,sys;print(len(json.load(open(sys.argv[1])
 link_path()  { python3 -c 'import json,sys;d=json.load(open(sys.argv[1]));i=int(sys.argv[2])-1;print(d[i]["path"] if 0<=i<len(d) else "")' "$work/links.json" "$1" 2>/dev/null; }
 
 list_links() {
-    python3 - "$work/links.json" "$cols" <<'PY'
-import json, sys
+    python3 - "$work/links.json" "$cols" "$current" "$work/links.json.anchors" <<'PY'
+import json, os, sys
 
+links_file, width, current, anchors_file = sys.argv[1:5]
+width = int(width)
 try:
-    links = json.load(open(sys.argv[1]))
+    links = json.load(open(links_file))
 except Exception:
     links = []
-width = int(sys.argv[2]) if len(sys.argv) > 2 else 80
+try:
+    anchors = json.load(open(anchors_file))
+except Exception:
+    anchors = {}
 
 if not links:
     print("  (no local links in this file)")
     raise SystemExit(0)
 
-# A citation marker is called "[21]", which says nothing on its own; where
-# it goes is the useful half.
-label_room = max(12, min(40, max(len(l["label"]) for l in links)))
-for i, link in enumerate(links, 1):
+here = os.path.dirname(current)
+rows = []
+for link in links:
     label = " ".join(link["label"].split())
-    if len(label) > label_room:
-        label = label[:label_room - 1] + "…"
     target = link["path"]
     if target.startswith("#"):
         slug, _, item = target[1:].partition("|")
-        target = "#" + slug + (" item " + item if item else "")
-    room = width - label_room - 10
-    if room > 4 and len(target) > room:
-        # Trimmed from the front: the end of a path identifies it.
-        target = "…" + target[-(room - 1):]
-    print("  {:>2}) {:<{}}  {}".format(i, label, label_room, target))
+        where = anchors.get(slug, slug)
+        if item:
+            where += ", item " + item
+        rows.append((label, where))
+        continue
+    # Relative to the document being read: the absolute path is the same
+    # long prefix on every line and says nothing.
+    try:
+        where = os.path.relpath(target, here)
+    except ValueError:
+        where = target
+    # When the label is already the file, one column says everything.
+    if label.lstrip("./") == where:
+        rows.append((where, ""))
+    else:
+        rows.append((label, where))
+
+# Only the rows that carry a target need a column to line up in; a row
+# that is just a filename should not be padded to match one.
+paired = [len(a) for a, w in rows if w]
+label_room = min(28, max(paired)) if paired else 12
+
+for i, (label, where) in enumerate(rows, 1):
+    if not where:
+        room = width - 8
+        if len(label) > room:
+            label = "…" + label[-(room - 1):]
+        print("  {:>2}) {}".format(i, label))
+        continue
+    if len(label) > label_room:
+        label = label[:label_room - 1] + "…"
+    room = width - label_room - 12
+    if room > 4 and len(where) > room:
+        where = "…" + where[-(room - 1):]
+    print("  {:>2}) {:<{}}  -> {}".format(i, label, label_room, where))
 PY
 }
 
@@ -412,11 +443,11 @@ read_key_wait() {
 # behaviour is not the terminal's: escape abandons the search, and so does
 # rubbing out the last character of it. Returns 1 when abandoned.
 read_pattern() {
-    local prompt="$1" buf="" c seq
+    local prompt="$1" row="${2:-$rows}" buf="" c seq
     PATTERN=""
     printf '\e[?25h'
     while :; do
-        printf '\e[%d;1H\e[K%s%s' "$rows" "$prompt" "$buf"
+        printf '\e[%d;1H\e[K%s%s' "$row" "$prompt" "$buf"
         IFS= read -rsn1 c || { printf '\e[?25l'; return 1; }
         case "$c" in
             "")               # return: the delimiter is stripped, leaving nothing
@@ -870,11 +901,16 @@ while :; do
             fi ;;
         char:l|char:L)
             printf '\e[H\e[2J'
-            list_links
+            listing="$(list_links)"
+            printf '%s\n' "$listing"
+            # Asked for just under the list, rather than at the foot of a
+            # mostly empty screen.
+            prompt_row=$(( $(printf '%s\n' "$listing" | wc -l) + 2 ))
+            [ "$prompt_row" -gt "$rows" ] && prompt_row="$rows"
             # Read here rather than in the terminal: with the mouse
             # reporting, every movement would otherwise be typed into the
             # prompt as an escape sequence.
-            read_pattern "follow link #: " || PATTERN=""
+            read_pattern "follow link #: " "$prompt_row" || PATTERN=""
             num="$PATTERN"
             if [ -n "${num//[!0-9]/}" ]; then
                 target="$(link_path "$num")"
