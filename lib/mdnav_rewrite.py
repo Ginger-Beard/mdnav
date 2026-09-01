@@ -35,6 +35,17 @@ INCLUDE_RE = re.compile(r"\{\{#(?:rustdoc_)?include\s+([^}\s]+)\s*\}\}")
 TARGET_RE = re.compile(r"(!?\[[^\]]*\]\()([^)\s]+)(\s+\"[^\"]*\")?\)")
 LINK_RE = re.compile(r"(?<!!)\[([^\]]+)\]\(([^)\s]+)(\s+\"[^\"]*\")?\)")
 URL_RE = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.-]*:")
+HEADING_RE = re.compile(r"^(#{1,6})[ \t]+(.+?)[ \t]*#*[ \t]*$", re.MULTILINE)
+# What a heading is called once it is a link target: lowercased, stripped of
+# anything that is not a word, and spaces hyphenated. Both GitHub and mdBook
+# spell it this way.
+def anchor_slug(text):
+    text = re.sub(r"`([^`]*)`", r"\1", text)
+    text = re.sub(r"\*\*?([^*]*)\*?\*", r"\1", text)
+    text = re.sub(r"\[([^\]]*)\]\([^)]*\)", r"\1", text)
+    text = text.strip().lower()
+    text = re.sub(r"[^\w\s-]", "", text, flags=re.UNICODE)
+    return re.sub(r"[\s]+", "-", text)
 
 
 # Markdown allows raw HTML, and a terminal renderer prints it verbatim --
@@ -178,6 +189,9 @@ def main():
     srcdir = os.path.dirname(os.path.realpath(src))
     text = open(src, encoding="utf-8").read()
     links = []
+    # Where each anchor points, by the text of the heading that defines it.
+    anchors = {anchor_slug(m.group(2)): m.group(2).strip()
+               for m in HEADING_RE.finditer(text)}
 
     def local_path(target):
         """Absolute path for a local target, or None if it isn't one."""
@@ -199,6 +213,18 @@ def main():
 
     def fix_link(m):
         label, target, title = m.group(1), m.group(2), m.group(3) or ""
+        if target.startswith("#"):
+            # A place in this same document. Followed here rather than
+            # handed to the desktop, which can only read it as a file that
+            # does not exist.
+            slug = anchor_slug(target[1:])
+            if slug not in anchors:
+                return label
+            links.append({"label": label, "path": "#" + slug})
+            if not scheme:
+                return label
+            uri = "{}://{}/{}".format(scheme, instance, quote("#" + slug))
+            return "[{}]({}{})".format(label, uri, title)
         path = local_path(target)
         if path is None:
             return m.group(0)
@@ -223,6 +249,8 @@ def main():
         f.write(text)
     with open(out_links, "w", encoding="utf-8") as f:
         json.dump(links, f)
+    with open(out_links + ".anchors", "w", encoding="utf-8") as f:
+        json.dump(anchors, f)
 
 
 if __name__ == "__main__":

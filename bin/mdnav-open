@@ -29,6 +29,10 @@ if not slash:
     # No authority: the whole thing is the path.
     instance, tail = "", rest
 path = urllib.parse.unquote("/" + tail if slash else tail)
+# An anchor names a place in the document, not a path: it must not be
+# given a leading slash and turned into one.
+if path.startswith("/#"):
+    path = path[1:]
 print(path)
 
 

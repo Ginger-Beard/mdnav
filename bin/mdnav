@@ -92,7 +92,7 @@ done
 [ -f "$file" ] || die "no such file: $file"
 command -v "$MDCAT" >/dev/null 2>&1 || die "mdcat not found (set MDCAT_BIN to override)"
 command -v python3 >/dev/null 2>&1 || die "python3 is required"
-for helper in mdnav_rewrite.py mdnav_detect.sh mdnav_keys.sh mdnav_slice.py mdnav_wrap.py; do
+for helper in mdnav_rewrite.py mdnav_detect.sh mdnav_keys.sh mdnav_slice.py mdnav_wrap.py mdnav_anchor.py; do
     [ -f "$LIB/$helper" ] || die "missing helper: $LIB/$helper"
 done
 # shellcheck source=lib/mdnav_detect.sh
@@ -436,6 +436,18 @@ run_search() {   # <direction> <prompt>
         1) SEARCH_MSG="not found" ;;
         2) SEARCH_MSG="bad pattern" ;;
     esac
+}
+
+# A place in this same document: find the heading it names and go there.
+# The desktop could only read it as a file, and there is no such file.
+goto_anchor() {
+    local line
+    line="$(python3 "$LIB/mdnav_anchor.py" "$work/links.json.anchors" "$1" \
+              "$work/buffer.ansi" 2>/dev/null)" || return 1
+    [ -n "$line" ] || return 1
+    top="$line"
+    [ "$top" -gt "$MT" ] && top="$MT"
+    return 0
 }
 
 goto() {
