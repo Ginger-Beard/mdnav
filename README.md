@@ -229,6 +229,7 @@ the round trip.
 |---|---|
 | `MDCAT_BIN` | mdcat to run, if not the one on `PATH` |
 | `MDNAV_IMAGE_PROTOCOL` | force `sixel`, `kitty`, `iterm2`, or `none` |
+| `MDNAV_SLICE` | `0` to leave images whole rather than cutting them into strips |
 | `MDNAV_FIFO` | where the click handler and the reader meet |
 | `MDNAV_INSTANCE` | this instance's name in the links it renders |
 | `MDNAV_SCHEME` | URL scheme, if `mdnav` collides with something |

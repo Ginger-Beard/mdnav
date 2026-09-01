@@ -10,17 +10,29 @@ would put real newlines in the middle of it.
 The cost is that the pager can no longer assume a line is a row, so it
 needs to be told how many rows each one will take.
 
-Escapes occupy no columns and a character may occupy two; a line carrying
-an image is one row whatever it contains.
+Escapes occupy no columns and a character may occupy two.
+
+An image is asked how tall it is rather than assumed to be one row. It is
+one row once sliced, and a whole picture otherwise -- and the difference
+is not cosmetic: a line reported as one row that draws ten leaves the
+pager scrolling by less than it painted, so the next frame lands on top
+of what is still on screen. The escape carries its own geometry, in
+pixels for sixel and in rows for kitty, so the same question answers both
+cases and neither has to be assumed.
 
 Prints one count per line, in order.
 
-usage: mdnav_spans.py <buffer> <columns>
+usage: mdnav_spans.py <buffer> <columns> [cell-height]
 """
 
 import re
 import sys
 import unicodedata
+
+# Sixel raster attributes: "Pan;Pad;Ph;Pv, the last being pixel height.
+RASTER = re.compile(rb'"\d+;\d+;(\d+);(\d+)')
+# Kitty says it in rows outright.
+KITTY_ROWS = re.compile(rb"\x1b_G[^\x1b]*?(?:^|[;,])r=(\d+)")
 
 ESCAPES = re.compile(
     rb"\x1b\[[0-9;?]*[ -/]*[@-~]"
@@ -45,15 +57,29 @@ def display_width(line):
         return len(text)
 
 
+def image_rows(line, cell_h):
+    """Rows an image occupies, from what the escape says about itself."""
+    m = RASTER.search(line)
+    if m:
+        return max(1, -(-int(m.group(2)) // cell_h))
+    m = KITTY_ROWS.search(line)
+    if m:
+        return max(1, int(m.group(1)))
+    # Nothing said. One row is the old assumption and the safer of the two
+    # guesses: too few rows scrolls short, too many scrolls past content.
+    return 1
+
+
 def main():
     buffer_file, cols = sys.argv[1], int(sys.argv[2])
-    if cols < 1:
+    cell_h = int(sys.argv[3]) if len(sys.argv) > 3 else 20
+    if cols < 1 or cell_h < 1:
         return 1
     out = []
     with open(buffer_file, "rb") as fh:
         for line in fh.read().split(b"\n"):
             if b"\x1bP" in line or b"\x1b_G" in line:
-                out.append(1)
+                out.append(image_rows(line, cell_h))
                 continue
             width = display_width(line)
             out.append(max(1, -(-width // cols)))

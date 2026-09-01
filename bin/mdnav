@@ -104,11 +104,15 @@ done
 . "$LIB/mdnav_keys.sh"
 
 IMAGE_PROTOCOL="$(mdnav_image_protocol)"
-# Slicing needs a cropper. Without one, images stay whole and mdcat draws
-# them -- everything still works, but a tall image jumps rather than
-# scrolling, because it is one indivisible escape again.
+# Slicing needs a cropper. Without one, images stay whole: a tall one
+# jumps into view rather than scrolling into it, because it is one
+# indivisible escape again. It is only that, and not a corrupted screen,
+# because the pager asks an image how many rows it draws rather than
+# assuming one -- an image counted short scrolls by less than it painted
+# and lands the next frame on top of the last.
 SLICE=0
-if command -v convert >/dev/null 2>&1 && [ "$IMAGE_PROTOCOL" = "sixel" ]; then
+if [ "${MDNAV_SLICE:-1}" != 0 ] && command -v convert >/dev/null 2>&1 \
+   && [ "$IMAGE_PROTOCOL" = "sixel" ]; then
     SLICE=1
 fi
 
@@ -329,7 +333,8 @@ load_buffer() {
         while IFS= read -r sp; do
             SPAN[$i]="$sp"
             i=$(( i + 1 ))
-        done < <(python3 "$LIB/mdnav_spans.py" "$work/buffer.ansi" "$cols" 2>/dev/null)
+        done < <(python3 "$LIB/mdnav_spans.py" "$work/buffer.ansi" "$cols" \
+                     "$cell_h" 2>/dev/null)
     fi
 
     local junk
