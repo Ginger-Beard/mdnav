@@ -32,8 +32,10 @@ REF_RE = re.compile(r"\{\{#ref\}\}\s*(\S+)\s*\{\{#endref\}\}", re.DOTALL)
 INCLUDE_RE = re.compile(r"\{\{#(?:rustdoc_)?include\s+([^}\s]+)\s*\}\}")
 # Link and image targets together, for making a file's own relative paths
 # absolute before it is pasted somewhere else.
-TARGET_RE = re.compile(r"(!?\[[^\]]*\]\()([^)\s]+)(\s+\"[^\"]*\")?\)")
-LINK_RE = re.compile(r"(?<!!)\[([^\]]+)\]\(([^)\s]+)(\s+\"[^\"]*\")?\)")
+# A label can hold brackets of its own -- [[21]](#ref) is a reference
+# marker written as a link -- so one level of nesting is allowed for.
+TARGET_RE = re.compile(r"(!?\[(?:[^\[\]]|\[[^\[\]]*\])*\]\()([^)\s]+)(\s+\"[^\"]*\")?\)")
+LINK_RE = re.compile(r"(?<!!)\[((?:[^\[\]]|\[[^\[\]]*\])*)\]\(([^)\s]+)(\s+\"[^\"]*\")?\)")
 URL_RE = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.-]*:")
 HEADING_RE = re.compile(r"^(#{1,6})[ \t]+(.+?)[ \t]*#*[ \t]*$", re.MULTILINE)
 # What a heading is called once it is a link target: lowercased, stripped of
