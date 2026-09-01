@@ -74,6 +74,20 @@ cd mdnav
 | ImageMagick (`convert`) | **strongly wanted**: without it images are not sliced, and a tall one jumps into view rather than scrolling. See [Images are sliced](#images-are-sliced) |
 | `xdg-open`, `wslview`, or `open` | only for links to files that are not Markdown, which are handed to the desktop |
 
+Most of that is already on a working system; `python3`, `stty` and `tput`
+effectively always are. ImageMagick usually is not:
+
+```
+sudo apt install imagemagick          # Debian, Ubuntu, WSL
+sudo pacman -S imagemagick            # Arch
+sudo dnf install ImageMagick          # Fedora
+brew install imagemagick              # macOS
+```
+
+On WSL, `wslview` comes from [wslu](https://github.com/wslutilities/wslu)
+(`sudo apt install wslu`) and is only wanted if you follow links to files that
+are not Markdown; without it those are simply not opened.
+
 Registering the `mdnav://` scheme uses whatever the platform provides, and only
 during `install.sh`: `reg.exe` and `wscript` on WSL, `xdg-mime` and
 `update-desktop-database` on Linux, `osacompile` and Launch Services on macOS.
