@@ -97,11 +97,27 @@ HEADING_RE = re.compile(r"^(#{1,6})[ \t]+(.+?)[ \t]*#*[ \t]*$", re.MULTILINE)
 # stripped) leaves two spaces and gets two hyphens. Collapsing them here
 # would name every such heading differently from the document that links to
 # it.
-def anchor_slug(text):
+def heading_text(text):
+    """A heading with its markup taken off: the words a renderer will draw.
+
+    Both halves of an anchor need this. The name is built from it, as
+    GitHub builds one from the rendered heading rather than the written
+    one; and the jump looks for it in the rendered buffer, where the
+    backticks and asterisks are long gone. Keeping the written form here
+    made a link that resolved -- so it looked like a link -- and then
+    landed nowhere, because the line it was looking for did not exist.
+    """
     text = re.sub(r"`([^`]*)`", r"\1", text)
     text = re.sub(r"\*\*?([^*]*)\*?\*", r"\1", text)
+    # Underscores only where they wrap a word, so snake_case survives.
+    text = re.sub(r"(?<!\w)_{1,2}([^_]+)_{1,2}(?!\w)", r"\1", text)
+    text = re.sub(r"~~([^~]*)~~", r"\1", text)
     text = re.sub(r"\[([^\]]*)\]\([^)]*\)", r"\1", text)
-    text = text.strip().lower()
+    return text.strip()
+
+
+def anchor_slug(text):
+    text = heading_text(text).lower()
     text = re.sub(r"[^\w\s-]", "", text, flags=re.UNICODE)
     return re.sub(r"\s", "-", text)
 
@@ -338,7 +354,7 @@ def main():
     text = open(src, encoding="utf-8").read()
     links = []
     # Where each anchor points, by the text of the heading that defines it.
-    anchors = {anchor_slug(m.group(2)): m.group(2).strip()
+    anchors = {anchor_slug(m.group(2)): heading_text(m.group(2))
                for m in HEADING_RE.finditer(text)}
     # The same anchors with their hyphens run together, for a document that
     # wrote one hyphen where the heading gives two. Nothing else resolves
