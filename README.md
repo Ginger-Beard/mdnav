@@ -35,7 +35,12 @@ It re-renders on its own when the file changes on disk, so it can be left open
 beside an editor; your place in the document is kept. `MDNAV_WATCH=0` turns
 that off.
 
-`mdnav -c` renders once to stdout and exits, like mdcat. `-g` and `-G` control
+`mdnav -c` renders once to stdout and exits, like mdcat. Links stay as plain
+paths there, since nothing is running to receive a click. Piped rather than
+shown on a terminal, mdcat cannot draw hyperlinks at all and numbers them
+instead, listing the targets at the end — that list is longer here than under
+mdcat alone because included files, HTML anchors and `{{#ref}}` directives all
+become links that mdcat would otherwise not have seen. `-g` and `-G` control
 search highlighting, as they do in less.
 
 ## Install

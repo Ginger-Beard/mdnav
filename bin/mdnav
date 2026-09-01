@@ -524,6 +524,8 @@ status() {
 
 if [ "$cat_mode" = 1 ]; then
     SLICE=0
+    # No running instance to receive a click, so links stay plain paths.
+    SCHEME=""
     rewrite
     if [ -n "$IMAGE_PROTOCOL" ]; then
         "$MDCAT" --image-protocol "$IMAGE_PROTOCOL" "$work/render.md" && exit 0

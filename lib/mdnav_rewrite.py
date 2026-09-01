@@ -201,6 +201,10 @@ def main():
         if path is None:
             return m.group(0)
         links.append({"label": label, "path": path})
+        if not scheme:
+            # Nothing is listening for a click, so the path itself is the
+            # honest target -- the scheme would only show as noise.
+            return "[{}]({}{})".format(label, path, title)
         uri = "{}://{}{}".format(scheme, instance, quote(path))
         return "[{}]({}{})".format(label, uri, title)
 
