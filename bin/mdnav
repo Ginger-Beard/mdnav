@@ -1030,7 +1030,11 @@ while :; do
             if follow_click "$MOUSE_ROW" "$MOUSE_COL"; then
                 case "$FOLLOW_KIND" in
                     anchor) draw_all; status ;;     # a place in this document
-                    *)      load_buffer; draw_all; status ;;
+                    *)      # The mouse has not moved, but what is under it
+                            # has: describing the link just left would be
+                            # describing something no longer there.
+                            HOVER_URI=""
+                            load_buffer; draw_all; status ;;
                 esac
             fi ;;
         char:/)

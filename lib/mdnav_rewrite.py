@@ -280,6 +280,12 @@ def absolutize(text, base, doc_dir=None):
             # Leave it as written: a wrong absolute path is worse than an
             # unresolved relative one, which at least says what it meant.
             return m.group(0)
+        # The place in the file survives the file being renamed absolute.
+        # Dropped here, an included link would open its target at the top
+        # while the same link outside an include lands on the section.
+        frag = target.partition("#")[2]
+        if frag:
+            found += "#" + frag
         return "{}{}{})".format(head, as_dest(found), title)
     return TARGET_RE.sub(fix, text)
 
