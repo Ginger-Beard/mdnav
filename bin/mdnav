@@ -92,7 +92,8 @@ done
 [ -f "$file" ] || die "no such file: $file"
 command -v "$MDCAT" >/dev/null 2>&1 || die "mdcat not found (set MDCAT_BIN to override)"
 command -v python3 >/dev/null 2>&1 || die "python3 is required"
-for helper in mdnav_rewrite.py mdnav_detect.sh mdnav_keys.sh mdnav_slice.py mdnav_wrap.py mdnav_anchor.py; do
+for helper in mdnav_rewrite.py mdnav_detect.sh mdnav_keys.sh mdnav_slice.py \
+              mdnav_wrap.py mdnav_anchor.py mdnav_links.py; do
     [ -f "$LIB/$helper" ] || die "missing helper: $LIB/$helper"
 done
 # shellcheck source=lib/mdnav_detect.sh
@@ -125,6 +126,8 @@ ACTIVE_MATCH=-1
 ACTIVE_OCC=-1
 ACTIVE_RENDER=""
 MATCH_POS=-1
+declare -a LINKMAP=()
+HOVER_URI=""
 declare -a MATCH_LINE=()
 declare -a MATCH_OCC=()
 top=0
@@ -139,7 +142,7 @@ stty_saved=""
 alt=0
 cleanup() {
     if [ "$alt" = 1 ]; then
-        printf '\e[?2026l\e[?1006l\e[?1000l\e[?1007l\e[?1049l'
+        printf '\e[?2026l\e[?1006l\e[?1003l\e[?1000l\e[?1007l\e[?1049l'
     fi
     rm -rf "$work"
     [ "$owns_fifo" = 1 ] && rm -f "$FIFO"
@@ -238,6 +241,15 @@ load_buffer() {
 
     local junk
     while IFS= read -rsn1 -t 0.05 junk; do :; done
+    # Where each link sits on screen, so a mouse position can be turned
+    # back into the link under it. Worked out once, not per movement.
+    LINKMAP=()
+    local lidx lstart lend luri
+    while IFS=$'\t' read -r lidx lstart lend luri; do
+        [ -n "$lidx" ] || continue
+        LINKMAP[$lidx]="${LINKMAP[$lidx]:-}${lstart}:${lend}:${luri}"$'\x1f'
+    done < <(python3 "$LIB/mdnav_links.py" "$work/buffer.ansi" 2>/dev/null)
+
     LINK_COUNT="$(link_count)"
     LAST_MTIME="$(file_mtime)"
     top=0
@@ -528,6 +540,50 @@ end_frame() { printf '\e[?2026l'; }
 # they were, so images tore into stripes as soon as anything scrolled. A
 # full repaint of a screenful of strips measures around 15ms, which is well
 # inside the budget for it not to matter.
+# The link under a screen position, if any. Pure shell on purpose: this
+# runs whenever the mouse moves, and a subprocess per movement would cost
+# more than the feature is worth.
+hover_at() {
+    local row="$1" col="$2" idx entry item rest start end
+    idx=$(( top + row - 1 ))
+    entry="${LINKMAP[$idx]:-}"
+    if [ -z "$entry" ]; then
+        HOVER_URI=""
+        return 1
+    fi
+    local IFS=$'\x1f'
+    for item in $entry; do
+        [ -n "$item" ] || continue
+        start="${item%%:*}"
+        rest="${item#*:}"
+        end="${rest%%:*}"
+        if [ "$col" -ge "$start" ] && [ "$col" -le "$end" ]; then
+            HOVER_URI="${rest#*:}"
+            return 0
+        fi
+    done
+    HOVER_URI=""
+    return 1
+}
+
+# What a target is worth showing as: the scheme and the instance are
+# plumbing, and an anchor reads better as the # it was written with.
+hover_text() {
+    local uri="$1"
+    case "$uri" in
+        "$SCHEME://"*)
+            uri="${uri#"$SCHEME://"}"
+            uri="${uri#*/}"
+            uri="${uri//%23/#}"
+            uri="${uri//%7C/ }"
+            case "$uri" in
+                "#"*) ;;
+                *) uri="/$uri" ;;
+            esac ;;
+    esac
+    printf '%s' "$uri"
+}
+
 status() {
     local n pos total avail left right pad
     n="$LINK_COUNT"
@@ -539,7 +595,12 @@ status() {
     else pos="$(( top * 100 / (total - avail) ))%"
     fi
 
-    left=" ${current##*/}  ${pos}  ${n} link(s)"
+    if [ -n "$HOVER_URI" ]; then
+        local shown; shown="$(hover_text "$HOVER_URI")"
+        left=" -> ${shown}"
+    else
+        left=" ${current##*/}  ${pos}  ${n} link(s)"
+    fi
     if [ -n "$SEARCH_MSG" ]; then
         left="$left  /${SEARCH_PAT}: ${SEARCH_MSG}"
     elif [ -n "$SEARCH_PAT" ] && [ "$MATCH_POS" -ge 0 ]; then
@@ -596,7 +657,7 @@ query_cell_size
 # screen at a time.
 WHEEL_LINES="${MDNAV_WHEEL_LINES:-3}"
 if [ "${MDNAV_MOUSE:-1}" = 1 ]; then
-    printf '\e[?1049h\e[?8452h\e[?1000h\e[?1006h'
+    printf '\e[?1049h\e[?8452h\e[?1003h\e[?1006h'
 else
     printf '\e[?1049h\e[?8452h\e[?1007h'
 fi
@@ -677,12 +738,25 @@ while :; do
                 if [ "$WHEEL_LINES" -lt 0 ]; then delta=$(( delta + avail ))
                 else delta=$(( delta + WHEEL_LINES )); fi
                 moved=1 ;;
+            motion)
+                # Redrawn only when the answer changes: the mouse reports
+                # every pixel it crosses, and the bar must not be rewritten
+                # that often.
+                before="$HOVER_URI"
+                hover_at "$MOUSE_ROW" "$MOUSE_COL" || :
+                [ "$HOVER_URI" != "$before" ] && status
+                : ;;
             wheel-up)
                 if [ "$WHEEL_LINES" -lt 0 ]; then delta=$(( delta - avail ))
                 else delta=$(( delta - WHEEL_LINES )); fi
                 moved=1 ;;
             space|pgdn|char:f) delta=$(( delta + avail )); moved=1 ;;
             pgup|char:u|char:b) delta=$(( delta - avail )); moved=1 ;;
+            motion)
+                before="$HOVER_URI"
+                hover_at "$MOUSE_ROW" "$MOUSE_COL" || :
+                [ "$HOVER_URI" != "$before" ] && status
+                : ;;
             *) break ;;
         esac
         KEY=""
