@@ -93,7 +93,6 @@ cd mdnav
 | `stty`, `tput` | terminal size and raw input; coreutils and ncurses |
 | ImageMagick (`convert`) | **strongly wanted**: without it images are not sliced, and a tall one jumps into view rather than scrolling. See [Images are sliced](#images-are-sliced) |
 | `xdg-open`, `wslview`, or `open` | only for links to files that are not Markdown, which are handed to the desktop |
-| Microsoft core fonts | only for Mermaid diagrams, and only because Mermaid asks for its labels in Trebuchet MS. See [Mermaid diagrams come out blank](#mermaid-diagrams-come-out-blank) |
 
 Most of that is already on a working system; `python3`, `stty` and `tput`
 effectively always are. ImageMagick usually is not:
@@ -107,23 +106,8 @@ brew install imagemagick              # macOS
 
 #### Mermaid diagrams come out blank
 
-If a Mermaid diagram draws its boxes and arrows but none of its text, the
-fonts it asked for are not installed. Mermaid names Trebuchet MS, then
-Verdana, then Arial -- all Microsoft fonts, none of them usually present on
-Linux -- and when none can be found the labels are drawn as nothing at all,
-with no error. The shapes survive because they need no font.
-
-```
-sudo apt install ttf-mscorefonts-installer   # Debian, Ubuntu, WSL
-sudo pacman -S ttf-ms-fonts                  # Arch (AUR)
-sudo dnf install curl cabextract xorg-x11-font-utils fontconfig
-sudo rpm -i https://downloads.sourceforge.net/project/mscorefonts2/rpms/msttcore-fonts-installer-2.6-1.noarch.rpm  # Fedora
-```
-
-macOS has them already.
-
-Failing that, a single diagram can name a font you do have, as its first
-line inside the block:
+If a Mermaid diagram draws its boxes and arrows but none of its text, name
+a font in the diagram itself, as the first line inside the block:
 
 ````
 ```mermaid
@@ -133,9 +117,21 @@ flowchart TB
 ```
 ````
 
+`DejaVu Sans` is on essentially every Linux install; on macOS, `Helvetica`
+will do. Spell it exactly as the system does -- that is the whole of the
+problem. The renderer that draws these diagrams matches a font name
+case-sensitively, and Mermaid asks for its labels in lower case
+(`"trebuchet ms", verdana, arial, sans-serif`), so nothing matches and the
+labels are drawn as nothing at all, with no error. The shapes survive
+because they need no font.
+
+Installing fonts does not help: with Trebuchet MS, Verdana and Arial all
+present, the default still renders blank, while `"Verdana"` spelled with
+its capital renders correctly.
+
 This is not mdnav's doing and mdnav cannot work around it: the diagram is
-rendered to an image before mdnav ever sees it, and the text is already
-missing from the picture.
+an image before mdnav ever sees it, and the text is already missing from
+the picture.
 
 On WSL, `wslview` comes from [wslu](https://github.com/wslutilities/wslu)
 (`sudo apt install wslu`) and is only wanted if you follow links to files that
