@@ -51,6 +51,26 @@ ESCAPES = re.compile(
 RULE_CHARS = set("─━╌┄┈")
 
 
+SGR = re.compile(rb"\x1b\[[0-9;]*m")
+
+
+def sgr_start(line, at):
+    """Back up over the styling that belongs to the text at `at`.
+
+    A renderer opens the link and then colours what is inside it. Placing
+    the link after the colour instead covers the same characters, but not
+    in the same shape, and a terminal is entitled to notice -- so it is
+    written the way the renderer writes it.
+    """
+    while True:
+        for m in SGR.finditer(line, 0, at):
+            if m.end() == at:
+                at = m.start()
+                break
+        else:
+            return at
+
+
 def linked_ranges(line):
     """Byte ranges of the line already covered by a link."""
     spans = []
@@ -233,7 +253,7 @@ def main():
                 if not covered and (index, at) not in taken:
                     taken.add((index, at))
                     edits.setdefault(index, []).append(
-                        (begin, finish, link["uri"]))
+                        (sgr_start(lines[index], begin), finish, link["uri"]))
                     placed = True
                     break
                 from_col = at + 1
