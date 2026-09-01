@@ -1,9 +1,5 @@
 # Lists inside blockquotes lose the quote bar; wrapped items get one mid-text
 
-Reported against mdcat 2.15.0 (https://github.com/BIRSAx2/mdcat).
-Kept here because mdnav renders through mdcat, so anyone seeing this in
-mdnav's output is seeing this bug rather than one of mdnav's.
-
 ## What happens
 
 A list nested in a blockquote renders without the `│` prefix its
