@@ -308,6 +308,10 @@ Things that look like they should work, and don't:
 
 - Reference-style links (`[a][b]` with a separate definition) are not
   rewritten; inline `[a](b)` is.
+- mdBook's `{{#ref}} path {{#endref}}` is followed as a link. Read without the
+  preprocessor that would expand it, it is otherwise a line of text naming a
+  file you cannot reach. `{{#include}}` is left alone: expanding that would
+  make this a build tool.
 - Links to non-Markdown files are handed to the desktop rather than rendered.
 - Slicing scales an image to the window width but not its height, so a tall
   image is still taller than the screen — it scrolls rather than fitting.

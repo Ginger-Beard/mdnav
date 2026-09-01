@@ -22,6 +22,11 @@ import sys
 from urllib.parse import quote
 
 IMAGE_RE = re.compile(r"!\[([^\]]*)\]\(([^)\s]+)(\s+\"[^\"]*\")?\)")
+# mdBook's cross-reference directive, which a preprocessor would replace
+# before rendering. Read raw -- as anyone browsing such a repository is --
+# it is a dead line of text naming a file. Turned into a link, it is the
+# thing worth following.
+REF_RE = re.compile(r"\{\{#ref\}\}\s*(\S+)\s*\{\{#endref\}\}", re.DOTALL)
 LINK_RE = re.compile(r"(?<!!)\[([^\]]+)\]\(([^)\s]+)(\s+\"[^\"]*\")?\)")
 URL_RE = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.-]*:")
 
@@ -64,6 +69,9 @@ def main():
         uri = "{}://{}{}".format(scheme, instance, quote(path))
         return "[{}]({}{})".format(label, uri, title)
 
+    # Rewritten into ordinary Markdown links first, so the same handling
+    # applies to them as to anything else.
+    text = REF_RE.sub(lambda m: "[{}]({})".format(m.group(1), m.group(1)), text)
     text = IMAGE_RE.sub(fix_image, text)
     text = LINK_RE.sub(fix_link, text)
 
