@@ -233,6 +233,20 @@ says, so the preference is lost on the way through. Terminals still handle
 ctrl+click on hyperlinks while reporting is on; `MDNAV_MOUSE=0` falls back to
 alternate scroll for any that do not.
 
+## Related
+
+**mdcat symlinked as `mdless`.** mdcat paginates through `less` when invoked
+under that name. It is the same arrangement as `mdcat -p`, and it inherits
+less's difficulty with images: a sixel image is one line as far as less is
+concerned, however many rows it occupies, so the text after it is drawn over.
+There is no link following either. Slicing images into one-row strips is what
+mdnav does about the first of those, and the URL scheme about the second.
+
+**[ttscoff/mdless](https://github.com/ttscoff/mdless)** is an unrelated Ruby
+markdown pager that happens to share that name, packaged in Homebrew. Not
+evaluated here; mentioned because the name is taken twice over, which is why
+this is not called mdless.
+
 ## Why not just…
 
 Things that look like they should work, and don't:
