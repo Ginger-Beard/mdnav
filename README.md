@@ -36,13 +36,34 @@ search highlighting, as they do in less.
 
 ## Install
 
+### First, mdcat
+
+```
+brew install mdcat          # macOS
+pacman -S mdcat             # Arch
+cargo install mdcat         # anywhere with a Rust toolchain
+```
+
+Prebuilt binaries are on [mdcat's releases
+page](https://github.com/BIRSAx2/mdcat/releases). It is not packaged for Debian
+or Ubuntu.
+
+Building with `cargo` on Debian/Ubuntu needs the OpenSSL headers first,
+otherwise the build fails partway through on `openssl-sys`:
+
+```
+sudo apt install pkg-config libssl-dev
+```
+
+### Then mdnav
+
 ```
 git clone https://github.com/Ginger-Beard/mdnav
 cd mdnav
 ./install.sh
 ```
 
-Requires [`mdcat`](#installing-mdcat), `python3`, and bash 3.2 or newer.
+Also needs `python3` and bash 3.2 or newer.
 [ImageMagick](https://imagemagick.org) is optional but wanted — see
 [Images are sliced](#images-are-sliced).
 
@@ -71,25 +92,6 @@ To skip registration entirely:
 
 mdnav still works — you follow links with `l` and a number rather than by
 clicking. Nothing needs installing at all for that; `./bin/mdnav` runs as-is.
-
-### Installing mdcat
-
-```
-brew install mdcat          # macOS
-pacman -S mdcat             # Arch
-cargo install mdcat         # anywhere with a Rust toolchain
-```
-
-Prebuilt binaries are on [mdcat's releases
-page](https://github.com/BIRSAx2/mdcat/releases). It is not packaged for Debian
-or Ubuntu.
-
-Building with `cargo` on Debian/Ubuntu needs the OpenSSL headers first,
-otherwise the build fails partway through on `openssl-sys`:
-
-```
-sudo apt install pkg-config libssl-dev
-```
 
 ## How it works
 
