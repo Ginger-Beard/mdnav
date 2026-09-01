@@ -680,8 +680,10 @@ def main():
                       "text": heading_text(label), "table": table})
         return "[{}]({}{})".format(label, uri, title)
 
-    text = set_mermaid_font(text)
     text = expand_includes(text, srcdir)
+    # After the includes, so a diagram pulled in from another file is named
+    # a font too -- it is the same diagram wherever it was written.
+    text = set_mermaid_font(text)
     if os.environ.get("MDNAV_HTML", "tidy") != "raw":
         text = tidy_html(text)
     # Rewritten into ordinary Markdown links first, so the same handling
