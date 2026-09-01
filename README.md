@@ -211,6 +211,7 @@ the round trip.
 | `MDNAV_FIFO` | where the click handler and the reader meet |
 | `MDNAV_INSTANCE` | this instance's name in the links it renders |
 | `MDNAV_SCHEME` | URL scheme, if `mdnav` collides with something |
+| `MDNAV_HTML` | `raw` to leave HTML in the source alone |
 | `MDNAV_WATCH` | `0` to stop re-rendering when the file changes |
 | `MDNAV_WHEEL_LINES` | lines per wheel notch (default 3); `-1` for a screen |
 | `MDNAV_MOUSE` | `0` to leave the wheel to the terminal |
@@ -308,6 +309,11 @@ Things that look like they should work, and don't:
 
 - Reference-style links (`[a][b]` with a separate definition) are not
   rewritten; inline `[a](b)` is.
+- Raw HTML is tidied, since Markdown permits it and a terminal renderer prints
+  it verbatim: `<img>` becomes a Markdown image and is drawn, `<a href>` a
+  followable link, and tags like `<details>` and `<span>` are dropped while
+  their text is kept. Code blocks are left exactly as written. `MDNAV_HTML=raw`
+  turns this off.
 - mdBook directives are handled, since raw sources are read without the
   preprocessor that would expand them: `{{#ref}} path {{#endref}}` is followed
   as a link, and `{{#include path}}` is inlined, line ranges included. A

@@ -37,6 +37,46 @@ LINK_RE = re.compile(r"(?<!!)\[([^\]]+)\]\(([^)\s]+)(\s+\"[^\"]*\")?\)")
 URL_RE = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.-]*:")
 
 
+# Markdown allows raw HTML, and a terminal renderer prints it verbatim --
+# so a document using it for images, badges or collapsible sections shows
+# tag soup where the content should be. These are reduced to what they
+# were standing for. Code is exempt: HTML inside a fence is the subject,
+# not decoration.
+FENCE_RE = re.compile(r"(^```.*?^```|^~~~.*?^~~~|`[^`\n]*`)", re.DOTALL | re.MULTILINE)
+HTML_IMG_RE = re.compile(r"<img\b[^>]*?>", re.IGNORECASE)
+HTML_ALT_RE = re.compile(r"""\balt\s*=\s*["']([^"']*)["']""", re.IGNORECASE)
+HTML_SRC_RE = re.compile(r"""\bsrc\s*=\s*["']([^"']+)["']""", re.IGNORECASE)
+HTML_A_RE = re.compile(
+    r"""<a\b[^>]*?\bhref\s*=\s*["']([^"']+)["'][^>]*?>(.*?)</a\s*>""",
+    re.IGNORECASE | re.DOTALL,
+)
+HTML_BR_RE = re.compile(r"<br\s*/?>", re.IGNORECASE)
+HTML_TAG_RE = re.compile(r"</?(?:details|summary|div|span|p|b|strong|i|em|u|small|sup|sub|figure|figcaption|center)\b[^>]*?>", re.IGNORECASE)
+
+
+def tidy_html(text):
+    def strip(chunk):
+        # An image written as HTML becomes a Markdown image, so it is drawn
+        # rather than described -- which is what the author meant by it.
+        def img(m):
+            src = HTML_SRC_RE.search(m.group(0))
+            if not src:
+                return ""
+            alt = HTML_ALT_RE.search(m.group(0))
+            return "![{}]({})".format(alt.group(1) if alt else "", src.group(1))
+        chunk = HTML_IMG_RE.sub(img, chunk)
+        chunk = HTML_A_RE.sub(lambda m: "[{}]({})".format(m.group(2).strip(), m.group(1)), chunk)
+        chunk = HTML_BR_RE.sub("\n", chunk)
+        chunk = HTML_TAG_RE.sub("", chunk)
+        return chunk
+
+    out = []
+    for i, part in enumerate(FENCE_RE.split(text)):
+        # Odd indices are the code the pattern captured; leave them be.
+        out.append(part if i % 2 else strip(part))
+    return "".join(out)
+
+
 def absolutize(text, base):
     """Resolve a chunk's relative targets against its own directory, so it
     still points where it meant to once inlined elsewhere."""
@@ -122,6 +162,8 @@ def main():
         return "[{}]({}{})".format(label, uri, title)
 
     text = expand_includes(text, srcdir)
+    if os.environ.get("MDNAV_HTML", "tidy") != "raw":
+        text = tidy_html(text)
     # Rewritten into ordinary Markdown links first, so the same handling
     # applies to them as to anything else.
     text = REF_RE.sub(lambda m: "[{}]({})".format(m.group(1), m.group(1)), text)
