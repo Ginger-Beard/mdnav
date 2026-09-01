@@ -35,6 +35,11 @@ It re-renders on its own when the file changes on disk, so it can be left open
 beside an editor; your place in the document is kept. `MDNAV_WATCH=0` turns
 that off.
 
+Long lines are wrapped to the window, as less does. mdcat wraps prose to the
+width it is given but never code, since reflowing a code block would
+misrepresent it, so code arrives wider than the screen and would otherwise run
+off it. `-S` leaves it running off, as less's `-S` does.
+
 `mdnav -c` renders once to stdout and exits, like mdcat. Links stay as plain
 paths there, since nothing is running to receive a click. Piped rather than
 shown on a terminal, mdcat cannot draw hyperlinks at all and numbers them

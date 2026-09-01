@@ -40,6 +40,7 @@ mdnav $VERSION -- mdcat, with links you can click.
 usage: mdnav [options] <file.md>
 
   -c, --cat      render once to stdout and exit (like mdcat)
+  -S             do not wrap long lines; let them run off the edge
   -g             highlight only the current match, not all of them
   -G             do not highlight matches at all
   -h, --help     this text
@@ -67,6 +68,8 @@ EOF
 }
 
 cat_mode=0
+# Long lines are wrapped, as less does; -S leaves them running off the edge.
+CHOP=0
 # How much of a search to mark, following less: all matches by default, only
 # the current one under -g, none under -G.
 HILITE=all
@@ -74,6 +77,7 @@ file=""
 while [ $# -gt 0 ]; do
     case "$1" in
         -c|--cat) cat_mode=1 ;;
+        -S|--chop-long-lines) CHOP=1 ;;
         -g|--hilite-search) HILITE=current ;;
         -G|--HILITE-SEARCH) HILITE=none ;;
         -h|--help) usage; exit 0 ;;
@@ -88,7 +92,7 @@ done
 [ -f "$file" ] || die "no such file: $file"
 command -v "$MDCAT" >/dev/null 2>&1 || die "mdcat not found (set MDCAT_BIN to override)"
 command -v python3 >/dev/null 2>&1 || die "python3 is required"
-for helper in mdnav_rewrite.py mdnav_detect.sh mdnav_keys.sh mdnav_slice.py; do
+for helper in mdnav_rewrite.py mdnav_detect.sh mdnav_keys.sh mdnav_slice.py mdnav_wrap.py; do
     [ -f "$LIB/$helper" ] || die "missing helper: $LIB/$helper"
 done
 # shellcheck source=lib/mdnav_detect.sh
@@ -217,6 +221,16 @@ load_buffer() {
        python3 "$LIB/mdnav_slice.py" "$work/buffer.ansi" "$work/sliced.ansi" \
            "$cell_h" "$CACHE" 2>/dev/null; then
         mv "$work/sliced.ansi" "$work/buffer.ansi"
+    fi
+
+    # mdcat wraps prose to the width it is given but never code, since
+    # reflowing a code block would misrepresent it. Those lines arrive wider
+    # than the screen and would be lost past the edge, so wrap them here --
+    # a wrapped line becoming several keeps one row per line intact.
+    if [ "$CHOP" = 0 ] && \
+       python3 "$LIB/mdnav_wrap.py" "$work/buffer.ansi" "$work/wrapped.ansi" \
+           "$cols" 2>/dev/null; then
+        mv "$work/wrapped.ansi" "$work/buffer.ansi"
     fi
 
     load_lines "$work/buffer.ansi"
@@ -455,7 +469,7 @@ recalc() {
 
 draw_line() {   # <screen row> <buffer index>
     local srow="$1" i="$2"
-    printf '\e[%d;1H\e[K' "$srow"
+    printf '\e[%d;1H\e[0m\e[K' "$srow"
     [ "$i" -lt "${#BUF[@]}" ] || return 0
     if [ "$i" = "$ACTIVE_MATCH" ] && [ -n "$ACTIVE_RENDER" ]; then
         printf '%s' "$ACTIVE_RENDER"
@@ -513,11 +527,11 @@ status() {
     [ ${#stack[@]} -gt 0 ] && right="$right · :p back"
     right="$right · l list · q quit "
     pad=$(( cols - ${#left} - ${#right} ))
-    printf '\e[%d;1H\e[K' "$rows"
+    printf '\e[%d;1H\e[0m\e[K' "$rows"
     if [ "$pad" -lt 1 ]; then
-        printf '\e[7m%-*.*s\e[0m' "$cols" "$cols" " $right"
+        printf '\e[0m\e[7m%-*.*s\e[0m' "$cols" "$cols" " $right"
     else
-        printf '\e[7m%s%*s%s\e[0m' "$left" "$pad" "" "$right"
+        printf '\e[0m\e[7m%s%*s%s\e[0m' "$left" "$pad" "" "$right"
     fi
     end_frame
 }
