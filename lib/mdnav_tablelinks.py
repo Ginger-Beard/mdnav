@@ -38,6 +38,27 @@ ESCAPES = re.compile(
 RULE_CHARS = set("─━╌┄┈")
 
 
+def linked_ranges(line):
+    """Byte ranges of the line already covered by a link."""
+    spans = []
+    open_at = None
+    pos = 0
+    while pos < len(line):
+        m = OSC8.match(line, pos)
+        if m:
+            if m.group(1):
+                open_at = m.start()
+            elif open_at is not None:
+                spans.append((open_at, m.end()))
+                open_at = None
+            pos = m.end()
+            continue
+        pos += 1
+    if open_at is not None:
+        spans.append((open_at, len(line)))
+    return spans
+
+
 def plain(line):
     """The line's text, and where each character of it sits in the bytes."""
     text = []
@@ -163,10 +184,13 @@ def main():
                 at = text.find(label, from_col)
                 if at < 0:
                     break
-                if (index, at) not in taken:
+                begin, finish = offsets[at], offsets[at + len(label)]
+                covered = any(a <= begin and finish <= b
+                              for a, b in linked_ranges(lines[index]))
+                if not covered and (index, at) not in taken:
                     taken.add((index, at))
                     edits.setdefault(index, []).append(
-                        (offsets[at], offsets[at + len(label)], link["uri"]))
+                        (begin, finish, link["uri"]))
                     placed = True
                     break
                 from_col = at + 1

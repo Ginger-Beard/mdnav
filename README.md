@@ -328,8 +328,15 @@ Things that look like they should work, and don't:
 
 ## Limitations
 
-- Reference-style links (`[a][b]` with a separate definition) are not
-  rewritten; inline `[a](b)` is.
+- Reference-style links (`[a][b]`) are resolved against their definition
+  and followed like any other. The shortcut form -- a bare `[name]` with a
+  definition elsewhere -- is not, since it cannot be told from ordinary
+  brackets, and `[[21]]` is a citation rather than a target.
+- Links inside code are left alone: a fence, an indented block, or a code
+  span is showing you the markup, not offering it. Four spaces after a
+  list item mean the item continues rather than code, and where that is
+  genuinely ambiguous the text wins, so a link in a deeply nested list
+  keeps working.
 - Links in table cells are put back after rendering. mdcat keeps a link's
   style inside a cell and drops its destination, so a table is the one
   place a link stops being one; mdnav knows what it wrote, so it compares

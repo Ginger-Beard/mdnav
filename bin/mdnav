@@ -203,7 +203,7 @@ link_path()  { python3 -c 'import json,sys;d=json.load(open(sys.argv[1]));i=int(
 
 list_links() {
     python3 - "$work/links.json" "$cols" "$current" "$work/links.json.anchors" <<'PY'
-import json, os, sys
+import json, os, re, sys
 
 links_file, width, current, anchors_file = sys.argv[1:5]
 width = int(width)
@@ -234,6 +234,10 @@ for link in links:
         continue
     # Relative to the document being read: the absolute path is the same
     # long prefix on every line and says nothing.
+    if link.get("external") or re.match(r"[a-zA-Z][a-zA-Z0-9+.-]*:", target):
+        # A URL is already the shortest true thing to say about itself.
+        rows.append((label, target) if label != target else (target, ""))
+        continue
     try:
         where = os.path.relpath(target, here)
     except ValueError:
@@ -563,6 +567,16 @@ run_search() {   # <direction> <prompt>
     esac
 }
 
+# Hand something to whatever opens things here. Backgrounded: a file
+# manager or a browser can take seconds to appear, and the pager should not
+# be waiting on it.
+open_desktop() {
+    if command -v wslview >/dev/null 2>&1; then wslview "$1" >/dev/null 2>&1 &
+    elif command -v xdg-open >/dev/null 2>&1; then xdg-open "$1" >/dev/null 2>&1 &
+    elif command -v open >/dev/null 2>&1; then open "$1" >/dev/null 2>&1 &
+    fi
+}
+
 # A place in this same document: find the heading it names and go there.
 # The desktop could only read it as a file, and there is no such file.
 goto_anchor() {
@@ -588,6 +602,13 @@ anchor_render() {
 goto() {
     local target="$1" frag=""
     [ -n "$target" ] || return 1
+    # Somewhere outside this machine's files: not ours to open, and not a
+    # path to be tested for existence either.
+    case "$target" in
+        [a-zA-Z][a-zA-Z0-9+.-]*://*|mailto:*)
+            open_desktop "$target"
+            return 1 ;;
+    esac
     # "file.md#section": everything after the last # names a place inside
     # the file. A file whose own name holds a # is rarer than a link to a
     # section, so the split stands only if it leaves a file that exists.
@@ -835,10 +856,7 @@ follow_click() {
         *)
             # Somewhere outside this document: the desktop knows what to do
             # with it and mdnav does not.
-            if command -v wslview >/dev/null 2>&1; then wslview "$uri" >/dev/null 2>&1 &
-            elif command -v xdg-open >/dev/null 2>&1; then xdg-open "$uri" >/dev/null 2>&1 &
-            elif command -v open >/dev/null 2>&1; then open "$uri" >/dev/null 2>&1 &
-            fi
+            open_desktop "$uri"
             return 1 ;;
     esac
 }

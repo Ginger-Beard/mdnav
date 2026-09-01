@@ -89,6 +89,18 @@ TARGET_RE = re.compile(
 LINK_RE = re.compile(
     r"(?<!!)\[(?P<label>(?:[^\[\]]|\[[^\[\]]*\])*)\]\(" + DEST + TITLE + r"\)")
 URL_RE = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.-]*:")
+# A link written as a name, with the destination given once further down:
+# [text][name], or [text][] where the text is the name. The shortcut form,
+# a bare [name], is deliberately not read as a link -- it cannot be told
+# apart from ordinary brackets, and "[[21]]" is a citation, not a target.
+REFDEF_RE = re.compile(
+    r"""^[ ]{0,3}\[([^\]]+)\]:[ \t]*<?([^\s>]+)>?[ \t]*((?:"[^"]*"|'[^']*'|\([^)]*\)))?[ \t]*$""",
+    re.MULTILINE)
+# A bare URL in angle brackets. Only looked for inside a table, where a
+# renderer that drops it leaves nothing behind to click.
+AUTOLINK_RE = re.compile(r"<((?:https?|ftp|mailto):[^>\s]+)>")
+REFLINK_RE = re.compile(
+    r"(?<!!)(!?)\[((?:[^\[\]]|\[[^\[\]]*\])*)\]\[([^\]]*)\]")
 HEADING_RE = re.compile(r"^(#{1,6})[ \t]+(.+?)[ \t]*#*[ \t]*$", re.MULTILINE)
 # What a heading is called once it is a link target: lowercased, stripped of
 # anything that is not a word, and spaces hyphenated. Both GitHub and mdBook
@@ -137,6 +149,116 @@ HTML_A_RE = re.compile(
 )
 HTML_BR_RE = re.compile(r"<br\s*/?>", re.IGNORECASE)
 HTML_TAG_RE = re.compile(r"</?(?:details|summary|div|span|p|b|strong|i|em|u|small|sup|sub|figure|figcaption|center)\b[^>]*?>", re.IGNORECASE)
+
+
+def expand_refstyle(text):
+    """Turn [text][name] into the inline link it stands for.
+
+    Everything downstream reads inline links, so a reference link is
+    invisible to all of it: not registered, not followable, and not
+    restorable in a table cell. Rewriting it here is enough to make it a
+    link like any other. A name with no definition is left as it was
+    written, since it is not a link either.
+    """
+    definitions = {}
+    for m in REFDEF_RE.finditer(text):
+        definitions.setdefault(m.group(1).strip().lower(), m.group(2))
+    if not definitions:
+        return text
+
+    def fix(m):
+        bang, label, name = m.group(1), m.group(2), m.group(3)
+        key = (name.strip() or label.strip()).lower()
+        target = definitions.get(key)
+        if not target:
+            return m.group(0)
+        return "{}[{}]({})".format(bang, label, target)
+
+    return outside_code(text, lambda chunk, at: REFLINK_RE.sub(fix, chunk))
+
+
+LIST_ITEM_RE = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s")
+
+
+def indented_ranges(text):
+    """Ranges of the code blocks written by indentation rather than fences.
+
+    Four spaces mean code after a blank line and ordinary text after a list
+    item, where they mean the item continues. Told apart by what comes
+    before: only a run that follows a blank line, and whose last non-blank
+    predecessor is neither indented nor a list item, is read as code. Where
+    that is unclear the run is left as text, which keeps a link in a deeply
+    nested list working -- the commoner thing by far.
+    """
+    lines = text.split("\n")
+    offsets = []
+    pos = 0
+    for line in lines:
+        offsets.append(pos)
+        pos += len(line) + 1
+
+    out = []
+    index = 0
+    previous = None
+    while index < len(lines):
+        line = lines[index]
+        indented = line.startswith("    ") or line.startswith("\t")
+        after_blank = index == 0 or not lines[index - 1].strip()
+        opens = previous is None or (
+            not previous[:1].isspace() and not LIST_ITEM_RE.match(previous))
+        if indented and after_blank and opens:
+            start = index
+            last = index
+            while index < len(lines):
+                if lines[index].startswith("    ") or lines[index].startswith("\t"):
+                    last = index
+                elif lines[index].strip():
+                    break
+                index += 1
+            out.append((offsets[start], offsets[last] + len(lines[last])))
+            continue
+        if line.strip():
+            previous = line
+        index += 1
+    return out
+
+
+def code_ranges(text):
+    """Everywhere a link is being shown rather than offered."""
+    spans = [m.span() for m in FENCE_RE.finditer(text)]
+    spans.extend(indented_ranges(text))
+    spans.sort()
+    merged = []
+    for start, end in spans:
+        if merged and start <= merged[-1][1]:
+            merged[-1] = (merged[-1][0], max(merged[-1][1], end))
+        else:
+            merged.append([start, end])
+    return [(a, b) for a, b in merged]
+
+
+def outside_code(text, transform):
+    """Rewrite everything except code, and say where each piece began.
+
+    A link inside a fence or a code span is a link being shown, not a link
+    being offered: the document is talking about the markup. Rewritten, it
+    is registered as somewhere to go, drawn with a target the author never
+    typed, and -- in a table cell -- risks having a real link fastened onto
+    literal text.
+
+    `transform(chunk, offset)` gets each non-code piece and its position in
+    the whole, so a rewrite can still tell where in the document it is.
+    """
+    out = []
+    at = 0
+    for start, end in code_ranges(text):
+        if start > at:
+            out.append(transform(text[at:start], at))
+        out.append(text[start:end])
+        at = end
+    if at < len(text):
+        out.append(transform(text[at:], at))
+    return "".join(out)
 
 
 def tidy_html(text):
@@ -215,7 +337,7 @@ def bracket_spaced(text, *bases):
                 return "{}<{}>{})".format(head, candidate, title)
         note("target {!r}: has a space and names nothing", inner)
         return m.group(0)
-    return SPACED_RE.sub(fix, text)
+    return outside_code(text, lambda chunk, at: SPACED_RE.sub(fix, chunk))
 
 
 # The delimiter row that makes the line above it a table header, and so
@@ -430,10 +552,10 @@ def main():
                 return number
         return None
 
-    def fix_link(m):
+    def fix_link(m, at):
         label, title = m.group("label"), m.group("title") or ""
         target = destination(m)
-        table = in_table(m.start())
+        table = in_table(at)
         if target.startswith("#"):
             # A place in this same document. Followed here rather than
             # handed to the desktop, which can only read it as a file that
@@ -475,6 +597,14 @@ def main():
         path = local_path(target)
         if path is None:
             if URL_RE.match(target):
+                # Somewhere outside the document. It is left exactly as
+                # written, for the renderer and the desktop to deal with
+                # between them -- but inside a table the renderer drops it,
+                # so it is recorded there in case it has to be put back.
+                if table is not None and scheme:
+                    links.append({"label": label, "path": target,
+                                  "uri": target, "text": heading_text(label),
+                                  "table": table, "external": True})
                 return m.group(0)
             note("link {!r}: nothing there", target)
             # A local target that resolves to nothing: shown as text, not as
@@ -505,12 +635,26 @@ def main():
     # Rewritten into ordinary Markdown links first, so the same handling
     # applies to them as to anything else.
     text = REF_RE.sub(lambda m: "[{}]({})".format(m.group(1), m.group(1)), text)
+    text = expand_refstyle(text)
     text = bracket_spaced(text, srcdir)
-    text = IMAGE_RE.sub(fix_image, text)
+    text = outside_code(text, lambda chunk, at: IMAGE_RE.sub(fix_image, chunk))
     # Worked out on the text the links are about to be read from, so the
     # offsets are the ones fix_link will be given.
     table_ranges[:] = table_spans(text)
-    text = LINK_RE.sub(fix_link, text)
+    text = outside_code(
+        text,
+        lambda chunk, at: LINK_RE.sub(lambda m: fix_link(m, at + m.start()), chunk))
+    # A bare <url> is not written as a link and never reaches fix_link, but
+    # in a table it is dropped like any other, so it is recorded too.
+    if scheme:
+        # Worked out again: rewriting the links above changed the length of
+        # everything after the first one, so the earlier ranges no longer
+        # say where the tables are.
+        for number, (start, end) in enumerate(table_spans(text)):
+            for m in AUTOLINK_RE.finditer(text, start, end):
+                url = m.group(1)
+                links.append({"label": url, "path": url, "uri": url,
+                              "text": url, "table": number, "external": True})
 
     with open(out_md, "w", encoding="utf-8") as f:
         f.write(text)
