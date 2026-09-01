@@ -26,10 +26,14 @@ n / N                  next match, previous
 esc                    clear the search
 l                      list links, pick one by number
 :p, backspace          back to the previous file
-r                      reload
+r                      reload now
 Ng                     go to line N (as 50g)
 :q, q                  quit
 ```
+
+It re-renders on its own when the file changes on disk, so it can be left open
+beside an editor; your place in the document is kept. `MDNAV_WATCH=0` turns
+that off.
 
 `mdnav -c` renders once to stdout and exits, like mdcat. `-g` and `-G` control
 search highlighting, as they do in less.
@@ -207,6 +211,7 @@ the round trip.
 | `MDNAV_FIFO` | where the click handler and the reader meet |
 | `MDNAV_INSTANCE` | this instance's name in the links it renders |
 | `MDNAV_SCHEME` | URL scheme, if `mdnav` collides with something |
+| `MDNAV_WATCH` | `0` to stop re-rendering when the file changes |
 | `MDNAV_WHEEL_LINES` | lines per wheel notch (default 3); `-1` for a screen |
 | `MDNAV_MOUSE` | `0` to leave the wheel to the terminal |
 | `MDNAV_KEY_POLL` | key poll interval, in seconds |

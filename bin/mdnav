@@ -56,7 +56,7 @@ keys:
   esc                    clear the search
   l                      list links, pick one by number
   :p, backspace          back to the previous file
-  r                      reload
+  r                      reload now (it also reloads on its own when the file changes)
   Ng                     go to line N (as 50g)
   :q                     quit
   q                      quit
@@ -114,6 +114,8 @@ SEARCH_PAT=""
 SEARCH_DIR=1
 SEARCH_MSG=""
 COUNT=""
+LAST_MTIME=""
+WATCH_TICK=0
 ACTIVE_MATCH=-1
 ACTIVE_OCC=-1
 ACTIVE_RENDER=""
@@ -145,6 +147,19 @@ trap 'cleanup; exit 143' TERM
 
 raw_mode()    { stty -echo -icanon 2>/dev/null; }
 cooked_mode() { [ -n "$stty_saved" ] && stty "$stty_saved" 2>/dev/null; }
+
+# Modification time, for noticing the file change underneath us. GNU and
+# BSD stat disagree on the flag, so settle it once rather than per check.
+STAT_FLAG=""
+if stat -c %Y . >/dev/null 2>&1; then
+    STAT_FLAG="-c%Y"
+elif stat -f %m . >/dev/null 2>&1; then
+    STAT_FLAG="-f%m"
+fi
+file_mtime() {
+    [ -n "$STAT_FLAG" ] || return 1
+    stat "$STAT_FLAG" "$current" 2>/dev/null
+}
 
 # Cell size in pixels, so images can be sliced to exactly one row each.
 query_cell_size() {
@@ -209,6 +224,7 @@ load_buffer() {
     local junk
     while IFS= read -rsn1 -t 0.05 junk; do :; done
     LINK_COUNT="$(link_count)"
+    LAST_MTIME="$(file_mtime)"
     top=0
     recalc
     # A search outlives the document it was typed in, as it does in less.
@@ -573,6 +589,24 @@ while :; do
             status
         fi
         continue
+    fi
+
+    # Re-render when the file changes underneath, roughly twice a second --
+    # often enough to feel immediate while writing, seldom enough that the
+    # stat costs nothing.
+    if [ "${MDNAV_WATCH:-1}" = 1 ] && [ -n "$STAT_FLAG" ]; then
+        WATCH_TICK=$(( WATCH_TICK + 1 ))
+        if [ "$WATCH_TICK" -ge 16 ]; then
+            WATCH_TICK=0
+            now="$(file_mtime)"
+            if [ -n "$now" ] && [ -n "$LAST_MTIME" ] && [ "$now" != "$LAST_MTIME" ]; then
+                keep="$top"
+                load_buffer
+                top="$keep"
+                [ "$top" -gt "$MT" ] && top="$MT"
+                draw_all; status
+            fi
+        fi
     fi
 
     mdnav_read_key || continue
