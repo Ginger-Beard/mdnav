@@ -39,57 +39,75 @@ def char_width(ch):
 
 
 def wrap_line(line, cols):
-    """Split one line into pieces at most `cols` columns wide."""
-    out = []
-    piece = bytearray()
-    width = 0
-    style = b""          # SGR sequences in force at the current point
+    """Split one line into pieces at most `cols` columns wide.
+
+    Breaks at a space where there is one, as mdcat does with prose, rather
+    than at whatever column the limit falls on -- a word split down the
+    middle reads as damage. A single run longer than the window has no
+    space to break at and is split where it must be.
+    """
+    items = []           # (bytes, width, is_space)
     pos = 0
-
-    def flush(carry_style):
-        nonlocal piece, width
-        if carry_style and style:
-            out.append(bytes(piece) + RESET)
-        else:
-            out.append(bytes(piece))
-        piece = bytearray()
-        width = 0
-        if carry_style and style:
-            piece.extend(style)
-
     while pos < len(line):
         m = ESCAPES.match(line, pos)
         if m:
-            seq = m.group(0)
-            piece.extend(seq)
-            sgr = SGR.fullmatch(seq)
-            if sgr:
-                # An empty or zero parameter clears what came before.
-                params = sgr.group(1)
-                if params in (b"", b"0"):
-                    style = b""
-                else:
-                    style += seq
+            items.append((m.group(0), 0, False))
             pos = m.end()
             continue
-
-        # One character, however many bytes UTF-8 spends on it.
         end = pos + 1
         while end < len(line) and 0x80 <= line[end] < 0xC0:
             end += 1
         raw = line[pos:end]
         try:
-            w = char_width(raw.decode("utf-8"))
+            ch = raw.decode("utf-8")
+            w = char_width(ch)
+            space = ch == " "
         except UnicodeDecodeError:
-            w = 1
-
-        if width + w > cols and width > 0:
-            flush(True)
-        piece.extend(raw)
-        width += w
+            w, space = 1, False
+        items.append((raw, w, space))
         pos = end
 
-    out.append(bytes(piece))
+    def style_after(start, seq):
+        """The styling in force after a run of items, given what preceded."""
+        style = start
+        for raw, _, _ in seq:
+            sgr = SGR.fullmatch(raw)
+            if sgr:
+                style = b"" if sgr.group(1) in (b"", b"0") else style + raw
+        return style
+
+    out = []
+    current = []
+    width = 0
+    line_style = b""     # what is in force where this line begins
+    last_space = -1
+
+    def emit(chunk, start_style):
+        body = b"".join(raw for raw, _, _ in chunk)
+        tail = RESET if style_after(start_style, chunk) else b""
+        out.append(start_style + body + tail)
+
+    for item in items:
+        raw, w, space = item
+        if w and width + w > cols and current:
+            if last_space > 0:
+                # Break at the space, which is dropped rather than left
+                # hanging at the end of the line.
+                head, tail = current[:last_space], current[last_space + 1:]
+            else:
+                # Nowhere to break: a single run wider than the window.
+                head, tail = current, []
+            emit(head, line_style)
+            line_style = style_after(line_style, head)
+            current = tail
+            width = sum(x[1] for x in tail)
+            last_space = -1
+        if space:
+            last_space = len(current)
+        current.append(item)
+        width += w
+
+    emit(current, line_style)
     return out
 
 
