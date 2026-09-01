@@ -333,7 +333,8 @@ def main():
     # sliced strips after rendering; "inline" lets mdcat draw them itself.
     image_mode = sys.argv[5] if len(sys.argv) > 5 else "inline"
     out_images = sys.argv[6] if len(sys.argv) > 6 else None
-    srcdir = os.path.dirname(os.path.realpath(src))
+    srcfile = os.path.realpath(src)
+    srcdir = os.path.dirname(srcfile)
     text = open(src, encoding="utf-8").read()
     links = []
     # Where each anchor points, by the text of the heading that defines it.
@@ -394,7 +395,20 @@ def main():
                 target += "|" + item
             links.append({"label": label, "path": target})
             if not scheme:
-                return label
+                # Nothing is listening for a click, but an anchor is still a
+                # link, and it is the only kind that was being dropped to
+                # text -- so a reader saw some links working and others
+                # silently not, and a resolved anchor looked exactly like
+                # one that named nothing.
+                #
+                # A place in this document, written out, is this document
+                # and the place in it: the same form a link into another
+                # file's section takes, and a target that still exists once
+                # mdnav has gone. Left bare, "#slug" would be resolved
+                # against the copy being rendered and point into a temp
+                # directory that is deleted on the way out.
+                return "[{}]({}{})".format(
+                    label, as_dest(srcfile + "#" + slug), title)
             uri = "{}://{}/{}".format(scheme, instance, quote(target))
             return "[{}]({}{})".format(label, uri, title)
         path = local_path(target)
