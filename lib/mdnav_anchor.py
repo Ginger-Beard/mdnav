@@ -43,11 +43,18 @@ def main():
     slug, _, item = slug.lstrip("#").partition("|")
     try:
         with open(anchors_file, encoding="utf-8") as fh:
-            text = json.load(fh).get(slug)
+            anchors = json.load(fh)
     except (OSError, ValueError):
         return 1
+    text = anchors.get(slug)
     if not text:
-        return 1
+        # A document that spelled the anchor with one hyphen where the
+        # heading gives two. Taken only when it names a single heading.
+        short = re.sub(r"-+", "-", slug)
+        near = [v for k, v in anchors.items() if re.sub(r"-+", "-", k) == short]
+        if len(near) != 1:
+            return 1
+        text = near[0]
 
     want = normalise(text)
     if not want:

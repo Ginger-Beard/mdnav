@@ -123,6 +123,10 @@ COUNT=""
 LAST_MTIME=""
 WATCH_TICK=0
 ANCHOR_LINE=-1
+# A place in the document about to be loaded, named by the link that is
+# opening it. Acted on once that document is on screen, since the heading
+# belongs to it and not to the one being left.
+PENDING_ANCHOR=""
 ACTIVE_MATCH=-1
 ACTIVE_OCC=-1
 ACTIVE_RENDER=""
@@ -310,6 +314,11 @@ load_buffer() {
     LAST_MTIME="$(file_mtime)"
     top=0
     recalc
+    # The place the link named, now that the document naming it is loaded.
+    if [ -n "$PENDING_ANCHOR" ]; then
+        goto_anchor "$PENDING_ANCHOR" || :
+        PENDING_ANCHOR=""
+    fi
     # A search outlives the document it was typed in, as it does in less.
     [ -n "$SEARCH_PAT" ] && apply_search
     return 0
@@ -539,8 +548,20 @@ anchor_render() {
 }
 
 goto() {
-    local target="$1"
+    local target="$1" frag=""
     [ -n "$target" ] || return 1
+    # "file.md#section": everything after the last # names a place inside
+    # the file. A file whose own name holds a # is rarer than a link to a
+    # section, so the split stands only if it leaves a file that exists.
+    case "$target" in
+        *"#"*)
+            frag="${target##*#}"
+            target="${target%#*}"
+            if [ ! -f "$target" ] && [ -f "$1" ]; then
+                target="$1"
+                frag=""
+            fi ;;
+    esac
     [ -f "$target" ] || return 1
     case "$target" in
         *.md|*.markdown|*.mkd) ;;
@@ -552,6 +573,7 @@ goto() {
     esac
     stack+=("$current")
     current="$target"
+    PENDING_ANCHOR="$frag"
     return 0
 }
 
@@ -740,8 +762,15 @@ hover_text() {
 # mdnav knows where the links are and is being told where the mouse is, so
 # a plain click is enough -- no modifier, and none of the confirmation the
 # terminal raises when it is the one asked to open something.
+# Set by follow_click: whether the click stayed in this document or
+# opened another. Reported rather than worked out again from the URI --
+# both kinds carry an anchor now, and only the caller knows that a
+# document it has not left does not need reloading.
+FOLLOW_KIND=""
+
 follow_click() {
     local row="$1" col="$2" uri rest
+    FOLLOW_KIND=""
     hover_at "$row" "$col" || return 1
     uri="$HOVER_URI"
     [ -n "$uri" ] || return 1
@@ -753,6 +782,7 @@ follow_click() {
             rest="${rest//%7C/|}"
             case "$rest" in
                 "#"*)
+                    FOLLOW_KIND="anchor"
                     goto_anchor "$rest" && return 0
                     return 1 ;;
                 *)
@@ -760,6 +790,7 @@ follow_click() {
                     # may hold a percent sign of its own.
                     rest="$(python3 -c 'import sys,urllib.parse as u;print(u.unquote(sys.argv[1]))' "$rest" 2>/dev/null)"
                     [ -n "$rest" ] || return 1
+                    FOLLOW_KIND="file"
                     goto "/$rest" && return 0
                     return 1 ;;
             esac ;;
@@ -997,9 +1028,9 @@ while :; do
             if page_back; then ANCHOR_LINE=-1; draw_all; status; fi ;;
         click)
             if follow_click "$MOUSE_ROW" "$MOUSE_COL"; then
-                case "$HOVER_URI" in
-                    *%23*) draw_all; status ;;      # a place in this document
-                    *)     load_buffer; draw_all; status ;;
+                case "$FOLLOW_KIND" in
+                    anchor) draw_all; status ;;     # a place in this document
+                    *)      load_buffer; draw_all; status ;;
                 esac
             fi ;;
         char:/)

@@ -340,6 +340,9 @@ Things that look like they should work, and don't:
   Anchors are matched to headings the way GitHub and mdBook spell them; a
   link naming a heading that does not exist is left as plain text rather
   than as a link that cannot go anywhere.
+- A link to a place in *another* document (`[see](other.md#section)`) opens
+  that file and lands on the section, marked the same way. If the file
+  exists but the section does not, it opens at the top.
 - Raw HTML is tidied, since Markdown permits it and a terminal renderer prints
   it verbatim: `<img>` becomes a Markdown image and is drawn, `<a href>` a
   followable link, and tags like `<details>` and `<span>` are dropped while

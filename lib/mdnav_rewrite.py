@@ -401,6 +401,13 @@ def main():
             # being rendered and become a path into the temp directory --
             # which looks real, and is not.
             return label
+        # A link into a section of another document: the file to open, and
+        # the place in it. Both are carried, and the place is resolved when
+        # that file is loaded, because the headings are its own and are not
+        # known here.
+        frag = target.partition("#")[2]
+        if frag:
+            path += "#" + anchor_slug(frag)
         links.append({"label": label, "path": path})
         if not scheme:
             # Nothing is listening for a click, so the path itself is the
