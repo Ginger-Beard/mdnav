@@ -25,7 +25,7 @@ ctrl+click             follow a link
 n / N                  next match, previous
 esc                    clear the search
 l                      list links with their targets, pick one by number
-:p, backspace          back to the previous file
+p, backspace           back to the previous file (:p too)
 r                      reload now
 Ng                     go to line N (as 50g)
 :q, q                  quit

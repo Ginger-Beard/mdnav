@@ -56,7 +56,7 @@ keys:
   n / N                  next match, previous
   esc                    clear the search
   l                      list links with their targets, pick by number
-  :p, backspace          back to the previous file
+  p, backspace           back to the previous file (:p too)
   r                      reload now (it also reloads on its own when the file changes)
   Ng                     go to line N (as 50g)
   :q                     quit
@@ -664,7 +664,7 @@ status() {
         left="$left  /${SEARCH_PAT} (${#MATCH_LINE[@]})"
     fi
     right="ctrl+click a link"
-    [ ${#stack[@]} -gt 0 ] && right="$right · :p back"
+    [ ${#stack[@]} -gt 0 ] && right="$right · p back"
     right="$right · l list · q quit "
 
     if [ -n "$HOVER_URI" ]; then
@@ -902,7 +902,7 @@ while :; do
             draw_all; status ;;
         char:r)
             load_buffer; draw_all; status ;;
-        backspace)
+        backspace|char:p)
             if [ ${#stack[@]} -gt 0 ]; then
                 last=$(( ${#stack[@]} - 1 ))
                 current="${stack[$last]}"; unset "stack[$last]"
