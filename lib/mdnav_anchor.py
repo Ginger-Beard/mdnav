@@ -27,6 +27,10 @@ ESCAPES = re.compile(
 )
 
 
+# The rule mdcat draws before a heading.
+RULE = "\u2501".encode("utf-8")
+
+
 def normalise(text):
     """A heading reduced to its words, so the rendered line and the source
     heading can be compared. mdcat draws headings with rules and markers
@@ -60,18 +64,29 @@ def main():
     if not want:
         return 1
 
+    raw_lines = open(buffer_file, "rb").read().split(b"\n")
     lines = [normalise(ESCAPES.sub(b"", raw).decode("utf-8", "replace"))
-             for raw in open(buffer_file, "rb").read().split(b"\n")]
+             for raw in raw_lines]
 
-    heading = None
-    for index, line in enumerate(lines):
-        # The whole line, not a part of it: "References" must not be
-        # answered by a line mentioning preferences.
-        if line == want:
-            heading = index
-            break
-    if heading is None:
+    # The whole line, not a part of it: "References" must not be answered
+    # by a line mentioning preferences.
+    matches = [i for i, line in enumerate(lines) if line == want]
+    if not matches:
         return 1
+    # A table of contents lists a heading word for word, and comes before
+    # it, so the first line that reads like the heading is routinely the
+    # contents entry pointing at it -- which is why clicking an entry
+    # scrolled to the entry. The two are alike in their text and unalike
+    # in what they are, in two ways: a heading is drawn with a rule before
+    # it, and an entry in a list of links is a link where a heading is
+    # not. The rule is the surer of the two, since a heading may itself be
+    # a link, but it is only drawn for headings below the first, so both
+    # are used. Neither can mislead here: only lines already reading word
+    # for word as the heading are being told apart.
+    ruled = [i for i in matches
+             if ESCAPES.sub(b"", raw_lines[i]).lstrip().startswith(RULE)]
+    plain = [i for i in matches if b"\x1b]8;;" not in raw_lines[i]]
+    heading = (ruled or plain or matches)[0]
 
     if item:
         # The item as the section lists it: "- [21] Title" reduces to
