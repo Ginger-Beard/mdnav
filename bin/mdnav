@@ -432,11 +432,20 @@ step_match() {
 # a two-key command, where the reader has already committed to typing one.
 read_key_wait() {
     local tries=0
-    while ! MDNAV_KEY_POLL=0.05 mdnav_read_key; do
+    while :; do
+        if MDNAV_KEY_POLL=0.05 mdnav_read_key; then
+            case "$KEY" in
+                # The mouse moving is not the rest of the command. With
+                # motion reporting on it arrives constantly, and taking the
+                # first thing that turned up meant : almost never saw the
+                # key typed after it.
+                motion|ignore) : ;;
+                *) return 0 ;;
+            esac
+        fi
         tries=$(( tries + 1 ))
-        [ "$tries" -gt 100 ] && return 1
+        [ "$tries" -gt 200 ] && return 1
     done
-    return 0
 }
 
 # The prompt is edited here rather than by the terminal, because less's
