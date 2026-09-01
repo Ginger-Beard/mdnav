@@ -40,7 +40,7 @@ mdnav $VERSION -- mdcat, with links you can click.
 usage: mdnav [options] <file.md>
 
   -c, --cat      render once to stdout and exit (like mdcat)
-  -S             do not wrap long lines; let them run off the edge
+  -S             let long lines run off the edge instead of wrapping
   -g             highlight only the current match, not all of them
   -G             do not highlight matches at all
   -h, --help     this text
@@ -93,7 +93,7 @@ done
 command -v "$MDCAT" >/dev/null 2>&1 || die "mdcat not found (set MDCAT_BIN to override)"
 command -v python3 >/dev/null 2>&1 || die "python3 is required"
 for helper in mdnav_rewrite.py mdnav_detect.sh mdnav_keys.sh mdnav_slice.py \
-              mdnav_wrap.py mdnav_anchor.py mdnav_links.py; do
+              mdnav_spans.py mdnav_anchor.py mdnav_links.py; do
     [ -f "$LIB/$helper" ] || die "missing helper: $LIB/$helper"
 done
 # shellcheck source=lib/mdnav_detect.sh
@@ -126,6 +126,8 @@ ACTIVE_MATCH=-1
 ACTIVE_OCC=-1
 ACTIVE_RENDER=""
 MATCH_POS=-1
+declare -a SPAN=()
+declare -a ROWLINE=()
 declare -a LINKMAP=()
 HOVER_URI=""
 declare -a MATCH_LINE=()
@@ -142,7 +144,7 @@ stty_saved=""
 alt=0
 cleanup() {
     if [ "$alt" = 1 ]; then
-        printf '\e[?2026l\e[?1006l\e[?1003l\e[?1000l\e[?1007l\e[?1049l'
+        printf '\e[?7h\e[?2026l\e[?1006l\e[?1003l\e[?1000l\e[?1007l\e[?1049l'
     fi
     rm -rf "$work"
     [ "$owns_fifo" = 1 ] && rm -f "$FIFO"
@@ -277,17 +279,20 @@ load_buffer() {
         mv "$work/sliced.ansi" "$work/buffer.ansi"
     fi
 
-    # mdcat wraps prose to the width it is given but never code, since
-    # reflowing a code block would misrepresent it. Those lines arrive wider
-    # than the screen and would be lost past the edge, so wrap them here --
-    # a wrapped line becoming several keeps one row per line intact.
-    if [ "$CHOP" = 0 ] && \
-       python3 "$LIB/mdnav_wrap.py" "$work/buffer.ansi" "$work/wrapped.ansi" \
-           "$cols" 2>/dev/null; then
-        mv "$work/wrapped.ansi" "$work/buffer.ansi"
-    fi
-
     load_lines "$work/buffer.ansi"
+
+    # Long lines are left whole for the terminal to wrap, so that selecting
+    # one copies it back unbroken -- the difference between code you can
+    # paste and code you cannot. The cost is that a line is no longer a
+    # row, so how many rows each takes has to be known.
+    SPAN=()
+    if [ "$CHOP" = 0 ]; then
+        local sp i=0
+        while IFS= read -r sp; do
+            SPAN[$i]="$sp"
+            i=$(( i + 1 ))
+        done < <(python3 "$LIB/mdnav_spans.py" "$work/buffer.ansi" "$cols" 2>/dev/null)
+    fi
 
     local junk
     while IFS= read -rsn1 -t 0.05 junk; do :; done
@@ -557,7 +562,17 @@ MT=0
 recalc() {
     AVAIL=$(( rows - 1 ))
     [ "$AVAIL" -lt 1 ] && AVAIL=1
-    MT=$(( ${#BUF[@]} - AVAIL ))
+    # A line can occupy several rows, so the furthest we can scroll is
+    # found by walking back from the end until the tail stops fitting.
+    local i="${#BUF[@]}" used=0
+    MT="${#BUF[@]}"
+    [ "$MT" -gt 0 ] && MT=$(( MT - 1 ))
+    while [ "$i" -gt 0 ]; do
+        i=$(( i - 1 ))
+        used=$(( used + ${SPAN[$i]:-1} ))
+        [ "$used" -gt "$AVAIL" ] && break
+        MT="$i"
+    done
     [ "$MT" -lt 0 ] && MT=0
 }
 
@@ -576,20 +591,69 @@ draw_line() {   # <screen row> <buffer index>
     fi
 }
 
+# A page forward is wherever the last screen stopped, not a fixed number
+# of lines: a screen holds fewer lines when some of them wrap.
+page_forward() {
+    if [ "$PAGE_NEXT" -gt "$top" ] && [ "$PAGE_NEXT" -le "$MT" ]; then
+        top="$PAGE_NEXT"
+    elif [ "$top" -lt "$MT" ]; then
+        top="$MT"
+    else
+        return 1
+    fi
+    return 0
+}
+
+# And a page back is as far as fits above, counted the same way.
+page_back() {
+    [ "$top" -gt 0 ] || return 1
+    local i="$top" used=0
+    while [ "$i" -gt 0 ]; do
+        i=$(( i - 1 ))
+        used=$(( used + ${SPAN[$i]:-1} ))
+        if [ "$used" -gt "$AVAIL" ]; then
+            i=$(( i + 1 ))
+            break
+        fi
+    done
+    [ "$i" -eq "$top" ] && [ "$i" -gt 0 ] && i=$(( i - 1 ))
+    top="$i"
+    return 0
+}
+
 draw_all() {
     local avail="$AVAIL"
-    local r=1
+    local r=1 i="$top" span k
     # Synchronised update: the terminal shows the frame only once it is
     # complete, instead of letting the repaint be watched happening.
     # Terminals that do not know the mode ignore it.
     printf '\e[?2026h\e[H'
+    ROWLINE=()
+    while [ "$r" -le "$avail" ] && [ "$i" -lt "${#BUF[@]}" ]; do
+        span="${SPAN[$i]:-1}"
+        # A line that will not fit whole is left for the next screen rather
+        # than drawn half on and half off.
+        [ "$r" -gt 1 ] && [ $(( r + span - 1 )) -gt "$avail" ] && break
+        k=0
+        while [ "$k" -lt "$span" ] && [ $(( r + k )) -le "$avail" ]; do
+            # Every row the line will cover is cleared first: the terminal
+            # wraps it across them, and whatever was there before must not
+            # show through.
+            printf '\e[%d;1H\e[0m\e[K' $(( r + k ))
+            ROWLINE[$(( r + k ))]="$i"
+            k=$(( k + 1 ))
+        done
+        draw_line "$r" "$i"
+        r=$(( r + span ))
+        i=$(( i + 1 ))
+    done
+    # Anything left below the last line is blanked.
     while [ "$r" -le "$avail" ]; do
-        # Each row is erased as it is rewritten, so there is no need to
-        # blank the screen first -- doing that showed an empty frame
-        # between every scroll.
-        draw_line "$r" $(( top + r - 1 ))
+        printf '\e[%d;1H\e[0m\e[K' "$r"
+        ROWLINE[$r]=-1
         r=$(( r + 1 ))
     done
+    PAGE_NEXT="$i"
 }
 
 end_frame() { printf '\e[?2026l'; }
@@ -604,7 +668,8 @@ end_frame() { printf '\e[?2026l'; }
 # more than the feature is worth.
 hover_at() {
     local row="$1" col="$2" idx entry item rest start end
-    idx=$(( top + row - 1 ))
+    idx="${ROWLINE[$row]:--1}"
+    [ "$idx" -ge 0 ] || { HOVER_URI=""; return 1; }
     entry="${LINKMAP[$idx]:-}"
     if [ -z "$entry" ]; then
         HOVER_URI=""
@@ -729,6 +794,9 @@ query_cell_size
 WHEEL_LINES="${MDNAV_WHEEL_LINES:-3}"
 if [ "${MDNAV_MOUSE:-1}" = 1 ]; then
     printf '\e[?1049h\e[?8452h\e[?1003h\e[?1006h'
+    # -S: the terminal stops wrapping, so a long line runs off the edge
+    # rather than continuing on the next row.
+    [ "$CHOP" = 1 ] && printf '\e[?7l'
 else
     printf '\e[?1049h\e[?8452h\e[?1007h'
 fi
@@ -821,8 +889,7 @@ while :; do
                 if [ "$WHEEL_LINES" -lt 0 ]; then delta=$(( delta - avail ))
                 else delta=$(( delta - WHEEL_LINES )); fi
                 moved=1 ;;
-            space|pgdn|char:f) delta=$(( delta + avail )); moved=1 ;;
-            pgup|char:u|char:b) delta=$(( delta - avail )); moved=1 ;;
+
             motion)
                 before="$HOVER_URI"
                 hover_at "$MOUSE_ROW" "$MOUSE_COL" || :
@@ -851,6 +918,10 @@ while :; do
     esac
 
     case "$KEY" in
+        space|pgdn|char:f)
+            if page_forward; then ANCHOR_LINE=-1; draw_all; status; fi ;;
+        pgup|char:u|char:b)
+            if page_back; then ANCHOR_LINE=-1; draw_all; status; fi ;;
         char:/)
             run_search 1 "/"
             draw_all; status ;;

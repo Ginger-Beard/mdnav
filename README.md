@@ -38,10 +38,13 @@ It re-renders on its own when the file changes on disk, so it can be left open
 beside an editor; your place in the document is kept. `MDNAV_WATCH=0` turns
 that off.
 
-Long lines are wrapped to the window at a space, as mdcat wraps prose. mdcat wraps prose to the
+Long lines are left whole and wrapped by the terminal. mdcat wraps prose to the
 width it is given but never code, since reflowing a code block would
-misrepresent it, so code arrives wider than the screen and would otherwise run
-off it. `-S` leaves it running off, as less's `-S` does.
+misrepresent it, so code arrives wider than the window — and a line the
+terminal wrapped is still one line to it, so selecting one copies it back
+unbroken. Breaking them here instead would put real newlines into the middle
+of the code. `-S` tells the terminal not to wrap, leaving long lines running
+off the edge, as less's `-S` does.
 
 `mdnav -c` renders once to stdout and exits, like mdcat. Links stay as plain
 paths there, since nothing is running to receive a click. Piped rather than
