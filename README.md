@@ -243,9 +243,9 @@ There is no link following either. Slicing images into one-row strips is what
 mdnav does about the first of those, and the URL scheme about the second.
 
 **[ttscoff/mdless](https://github.com/ttscoff/mdless)** is an unrelated Ruby
-markdown pager that happens to share that name, packaged in Homebrew. Not
-evaluated here; mentioned because the name is taken twice over, which is why
-this is not called mdless.
+markdown pager of the same name, packaged in Homebrew. It renders and
+paginates, but does not draw images or follow links. Mentioned also because
+the name is taken twice over, which is why this is not called mdless.
 
 ## Why not just…
 
