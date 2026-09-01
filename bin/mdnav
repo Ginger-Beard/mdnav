@@ -595,23 +595,7 @@ status() {
     else pos="$(( top * 100 / (total - avail) ))%"
     fi
 
-    if [ -n "$HOVER_URI" ]; then
-        # The target gets the whole bar. It is routinely longer than what
-        # it replaces, and sharing the width meant falling back to the
-        # narrow form -- which drops the left side, and with it the one
-        # thing being asked for.
-        local shown; shown="$(hover_text "$HOVER_URI")"
-        local room=$(( cols - 5 ))
-        if [ "$room" -gt 1 ] && [ "${#shown}" -gt "$room" ]; then
-            # Trimmed from the front: the end of a path says more than its
-            # beginning does.
-            shown="…${shown: -$(( room - 1 ))}"
-        fi
-        left=" -> ${shown}"
-        right=" "
-    else
-        left=" ${current##*/}  ${pos}  ${n} link(s)"
-    fi
+    left=" ${current##*/}  ${pos}  ${n} link(s)"
     if [ -n "$SEARCH_MSG" ]; then
         left="$left  /${SEARCH_PAT}: ${SEARCH_MSG}"
     elif [ -n "$SEARCH_PAT" ] && [ "$MATCH_POS" -ge 0 ]; then
@@ -623,6 +607,23 @@ status() {
     right="ctrl+click a link"
     [ ${#stack[@]} -gt 0 ] && right="$right · :p back"
     right="$right · l list · q quit "
+
+    if [ -n "$HOVER_URI" ]; then
+        # The target gets the bar to itself. It is routinely longer than
+        # what it replaces, and sharing the width pushed the bar into its
+        # narrow form -- which drops the left side, and with it the target
+        # that was the whole point of pointing at the link.
+        local shown; shown="$(hover_text "$HOVER_URI")"
+        local room=$(( cols - 5 ))
+        if [ "$room" -gt 1 ] && [ "${#shown}" -gt "$room" ]; then
+            # Trimmed from the front: the end of a path says more than its
+            # beginning does.
+            shown="…${shown: -$(( room - 1 ))}"
+        fi
+        left=" -> ${shown}"
+        right=" "
+    fi
+
     pad=$(( cols - ${#left} - ${#right} ))
     printf '\e[%d;1H\e[0m\e[K' "$rows"
     if [ "$pad" -lt 1 ]; then
