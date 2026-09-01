@@ -55,7 +55,7 @@ keys:
   / ?                    search forward, backward
   n / N                  next match, previous
   esc                    clear the search
-  l                      list links, pick one by number
+  l                      list links with their targets, pick by number
   :p, backspace          back to the previous file
   r                      reload now (it also reloads on its own when the file changes)
   Ng                     go to line N (as 50g)
@@ -194,16 +194,35 @@ link_count() { python3 -c 'import json,sys;print(len(json.load(open(sys.argv[1])
 link_path()  { python3 -c 'import json,sys;d=json.load(open(sys.argv[1]));i=int(sys.argv[2])-1;print(d[i]["path"] if 0<=i<len(d) else "")' "$work/links.json" "$1" 2>/dev/null; }
 
 list_links() {
-    python3 - "$work/links.json" <<'PY'
+    python3 - "$work/links.json" "$cols" <<'PY'
 import json, sys
+
 try:
     links = json.load(open(sys.argv[1]))
 except Exception:
     links = []
+width = int(sys.argv[2]) if len(sys.argv) > 2 else 80
+
 if not links:
     print("  (no local links in this file)")
-for i, l in enumerate(links, 1):
-    print("  {:>2}) {}".format(i, l["label"]))
+    raise SystemExit(0)
+
+# A citation marker is called "[21]", which says nothing on its own; where
+# it goes is the useful half.
+label_room = max(12, min(40, max(len(l["label"]) for l in links)))
+for i, link in enumerate(links, 1):
+    label = " ".join(link["label"].split())
+    if len(label) > label_room:
+        label = label[:label_room - 1] + "…"
+    target = link["path"]
+    if target.startswith("#"):
+        slug, _, item = target[1:].partition("|")
+        target = "#" + slug + (" item " + item if item else "")
+    room = width - label_room - 10
+    if room > 4 and len(target) > room:
+        # Trimmed from the front: the end of a path identifies it.
+        target = "…" + target[-(room - 1):]
+    print("  {:>2}) {:<{}}  {}".format(i, label, label_room, target))
 PY
 }
 
@@ -850,13 +869,13 @@ while :; do
                 load_buffer; draw_all; status
             fi ;;
         char:l|char:L)
-            printf '\e[H\e[2J\e[?25h'
-            cooked_mode
+            printf '\e[H\e[2J'
             list_links
-            printf '\nfollow link #: '
-            IFS= read -r num
-            raw_mode
-            printf '\e[?25l'
+            # Read here rather than in the terminal: with the mouse
+            # reporting, every movement would otherwise be typed into the
+            # prompt as an escape sequence.
+            read_pattern "follow link #: " || PATTERN=""
+            num="$PATTERN"
             if [ -n "${num//[!0-9]/}" ]; then
                 target="$(link_path "$num")"
                 case "$target" in
