@@ -319,6 +319,15 @@ load_buffer() {
        python3 "$LIB/mdnav_slice.py" "$work/buffer.ansi" "$work/sliced.ansi" \
            "$cell_h" "$CACHE" 2>/dev/null; then
         mv "$work/sliced.ansi" "$work/buffer.ansi"
+    elif [ -n "${MDNAV_DEBUG:-}" ] && grep -q $'\x1bP' "$work/buffer.ansi" 2>/dev/null; then
+        # Worth saying: an image that is not cut into strips cannot be drawn
+        # a row at a time, so it appears only once the whole of it fits, and
+        # the reason is nowhere on screen.
+        printf 'mdnav: %s: images left whole (slicing %s, protocol %s, cropper %s)\n' \
+            "${current##*/}" \
+            "$([ "${MDNAV_SLICE:-1}" = 0 ] && echo "off by request" || echo on)" \
+            "${IMAGE_PROTOCOL:-auto}" \
+            "$(command -v convert >/dev/null 2>&1 && echo found || echo missing)" >&4
     fi
 
     load_lines "$work/buffer.ansi"
