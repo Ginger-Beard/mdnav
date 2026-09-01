@@ -611,6 +611,15 @@ while :; do
     fi
 
     if read -t 0 -u 3 2>/dev/null && IFS= read -r -u 3 clicked; then
+        case "$clicked" in
+            "#"*)
+                # Somewhere in this document rather than another file.
+                if goto_anchor "$clicked"; then
+                    draw_all
+                    status
+                fi
+                continue ;;
+        esac
         if goto "$clicked"; then
             load_buffer
             draw_all
@@ -748,8 +757,12 @@ while :; do
             IFS= read -r num
             raw_mode
             printf '\e[?25l'
-            if [ -n "${num//[!0-9]/}" ] && goto "$(link_path "$num")"; then
-                load_buffer
+            if [ -n "${num//[!0-9]/}" ]; then
+                target="$(link_path "$num")"
+                case "$target" in
+                    "#"*) goto_anchor "$target" || : ;;
+                    *)    goto "$target" && load_buffer ;;
+                esac
             fi
             draw_all; status ;;
         "char::")
