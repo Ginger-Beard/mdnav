@@ -31,6 +31,12 @@ mdnav_image_protocol() {
     if [ -n "${KITTY_WINDOW_ID:-}" ] || case "${TERM:-}" in *kitty*) true ;; *) false ;; esac; then
         printf 'kitty'; return
     fi
+    # Ghostty draws images with kitty's protocol and answers no to sixel, so
+    # without this it falls past every branch here and shows none. Named
+    # rather than asked, because the question below is only about sixel.
+    if [ "${TERM_PROGRAM:-}" = "ghostty" ] || case "${TERM:-}" in *ghostty*) true ;; *) false ;; esac; then
+        printf 'kitty'; return
+    fi
     if [ "${TERM_PROGRAM:-}" = "iTerm.app" ] || [ "${TERM_PROGRAM:-}" = "WezTerm" ]; then
         printf 'iterm2'; return
     fi
