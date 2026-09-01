@@ -691,6 +691,32 @@ hover_at() {
     return 1
 }
 
+# Percent-decoding in the shell. A path is escaped on its way into a URI,
+# and shown to a reader on its way out, so the bar reads as a filename
+# rather than as the encoding of one.
+percent_decode() {
+    local s="$1" out="" hex ch
+    case "$s" in *%*) ;; *) printf '%s' "$s"; return ;; esac
+    while [ -n "$s" ]; do
+        case "$s" in
+            *%*)
+                out="$out${s%%\%*}"
+                s="${s#*%}"
+                hex="${s:0:2}"
+                # A stray percent is a percent. Names contain them.
+                if [[ "$hex" =~ ^[0-9A-Fa-f][0-9A-Fa-f]$ ]]; then
+                    printf -v ch "\\x$hex"
+                    out="$out$ch"
+                    s="${s:2}"
+                else
+                    out="$out%"
+                fi ;;
+            *)  out="$out$s"; s="" ;;
+        esac
+    done
+    printf '%s' "$out"
+}
+
 # What a target is worth showing as: the scheme and the instance are
 # plumbing, and an anchor reads better as the # it was written with.
 hover_text() {
@@ -699,8 +725,9 @@ hover_text() {
         "$SCHEME://"*)
             uri="${uri#"$SCHEME://"}"
             uri="${uri#*/}"
-            uri="${uri//%23/#}"
-            uri="${uri//%7C/ }"
+            uri="$(percent_decode "$uri")"
+            # The bar separator between an anchor and the item under it.
+            uri="${uri//|/ }"
             case "$uri" in
                 "#"*) ;;
                 *) uri="/$uri" ;;
@@ -777,6 +804,9 @@ status() {
         # narrow form -- which drops the left side, and with it the target
         # that was the whole point of pointing at the link.
         local shown; shown="$(hover_text "$HOVER_URI")"
+        # Four columns for the arrow and one kept clear at the end: a
+        # target trimmed to the exact width leaves no gap, and a bar with
+        # no gap falls back to its narrow form, which drops the target.
         local room=$(( cols - 5 ))
         if [ "$room" -gt 1 ] && [ "${#shown}" -gt "$room" ]; then
             # Trimmed from the front: the end of a path says more than its
@@ -784,13 +814,17 @@ status() {
             shown="…${shown: -$(( room - 1 ))}"
         fi
         left=" -> ${shown}"
-        right=" "
+        right=""
     fi
 
     pad=$(( cols - ${#left} - ${#right} ))
     printf '\e[%d;1H\e[0m\e[K' "$rows"
-    if [ "$pad" -lt 1 ]; then
+    if [ "$pad" -lt 1 ] && [ -n "$right" ]; then
         printf '\e[0m\e[7m%-*.*s\e[0m' "$cols" "$cols" " $right"
+    elif [ "$pad" -lt 1 ]; then
+        # No hints to fall back on -- keep the left side and let the width
+        # cut it, rather than showing an empty bar.
+        printf '\e[0m\e[7m%-*.*s\e[0m' "$cols" "$cols" "$left"
     else
         printf '\e[0m\e[7m%s%*s%s\e[0m' "$left" "$pad" "" "$right"
     fi
