@@ -317,7 +317,9 @@ Things that look like they should work, and don't:
 - Raw HTML is tidied, since Markdown permits it and a terminal renderer prints
   it verbatim: `<img>` becomes a Markdown image and is drawn, `<a href>` a
   followable link, and tags like `<details>` and `<span>` are dropped while
-  their text is kept. Code blocks are left exactly as written. `MDNAV_HTML=raw`
+  their text is kept. An `<img>` with an empty `alt` is dropped rather than
+  drawn, that being how a document says an image is decoration — badges either
+  side of a link, usually, which drawn would bury the link between them. Code blocks are left exactly as written. `MDNAV_HTML=raw`
   turns this off.
 - mdBook directives are handled, since raw sources are read without the
   preprocessor that would expand them: `{{#ref}} path {{#endref}}` is followed

@@ -57,12 +57,14 @@ HTML_TAG_RE = re.compile(r"</?(?:details|summary|div|span|p|b|strong|i|em|u|smal
 def tidy_html(text):
     def strip(chunk):
         # An image written as HTML becomes a Markdown image, so it is drawn
-        # rather than described -- which is what the author meant by it.
+        # rather than described -- unless its alt is empty, which is how a
+        # document says the image is decoration. Badges flanking a link are
+        # the usual case, and drawing them buries the link between them.
         def img(m):
             src = HTML_SRC_RE.search(m.group(0))
-            if not src:
-                return ""
             alt = HTML_ALT_RE.search(m.group(0))
+            if not src or (alt and not alt.group(1).strip()):
+                return ""
             return "![{}]({})".format(alt.group(1) if alt else "", src.group(1))
         chunk = HTML_IMG_RE.sub(img, chunk)
         chunk = HTML_A_RE.sub(lambda m: "[{}]({})".format(m.group(2).strip(), m.group(1)), chunk)
