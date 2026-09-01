@@ -596,8 +596,19 @@ status() {
     fi
 
     if [ -n "$HOVER_URI" ]; then
+        # The target gets the whole bar. It is routinely longer than what
+        # it replaces, and sharing the width meant falling back to the
+        # narrow form -- which drops the left side, and with it the one
+        # thing being asked for.
         local shown; shown="$(hover_text "$HOVER_URI")"
+        local room=$(( cols - 5 ))
+        if [ "$room" -gt 1 ] && [ "${#shown}" -gt "$room" ]; then
+            # Trimmed from the front: the end of a path says more than its
+            # beginning does.
+            shown="…${shown: -$(( room - 1 ))}"
+        fi
         left=" -> ${shown}"
+        right=" "
     else
         left=" ${current##*/}  ${pos}  ${n} link(s)"
     fi
