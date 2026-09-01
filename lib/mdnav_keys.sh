@@ -14,7 +14,9 @@ INPUT_BUF=""
 # the match ever sees it.
 MDNAV_MOUSE_RE=$'^\e\\[<([0-9]+);([0-9]+);([0-9]+)([Mm])'
 MDNAV_CSI_RE=$'^\e\\[([0-9;]*)([A-Za-z~])'
-MDNAV_SS3_RE=$'^\eO([A-Za-z])' 
+MDNAV_SS3_RE=$'^\eO([A-Za-z])'
+# An escape sequence that has arrived only in part: no final byte yet.
+MDNAV_PARTIAL_RE=$'^\e(\\[[<0-9;]*)?$' 
 
 mdnav_take() {   # drop <n> characters from the front of the buffer
     INPUT_BUF="${INPUT_BUF:$1}"
@@ -43,12 +45,18 @@ mdnav_read_key() {
         return 0
     fi
 
-    # An escape sequence may be split across chunks; give the rest a moment
-    # to arrive before deciding this is a bare Escape.
-    if [ "${#INPUT_BUF}" -lt 3 ]; then
-        IFS= read -rsn 32 -d '' -t 0.02 chunk
+    # A sequence can be cut in half by the end of a chunk. Wait for the
+    # rest of it: without this the half is unrecognisable, gets taken a
+    # character at a time, and a mouse report ends up read as the digits it
+    # contains -- which land wherever digits go.
+    local tries=0
+    while [[ "$INPUT_BUF" =~ $MDNAV_PARTIAL_RE ]] && [ "$tries" -lt 8 ]; do
+        chunk=""
+        IFS= read -rsn 64 -d '' -t 0.02 chunk
+        [ -n "$chunk" ] || break
         INPUT_BUF="$INPUT_BUF$chunk"
-    fi
+        tries=$(( tries + 1 ))
+    done
 
     # SGR mouse: <button;column;row followed by M (press or motion) or m.
     if [[ "$INPUT_BUF" =~ $MDNAV_MOUSE_RE ]]; then
@@ -105,6 +113,16 @@ mdnav_read_key() {
             D) KEY="left" ;;
             *) KEY="escape" ;;
         esac
+        return 0
+    fi
+
+    # Still only half a sequence after waiting for the rest: the rest is
+    # not coming. Thrown away whole, because taking it a character at a
+    # time would deliver its digits and semicolons as if someone had typed
+    # them.
+    if [ "${#INPUT_BUF}" -gt 1 ] && [[ "$INPUT_BUF" =~ $MDNAV_PARTIAL_RE ]]; then
+        INPUT_BUF=""
+        KEY="ignore"
         return 0
     fi
 
