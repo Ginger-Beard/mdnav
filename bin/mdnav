@@ -94,7 +94,8 @@ done
 command -v "$MDCAT" >/dev/null 2>&1 || die "mdcat not found (set MDCAT_BIN to override)"
 command -v python3 >/dev/null 2>&1 || die "python3 is required"
 for helper in mdnav_rewrite.py mdnav_detect.sh mdnav_keys.sh mdnav_slice.py \
-              mdnav_spans.py mdnav_anchor.py mdnav_links.py; do
+              mdnav_spans.py mdnav_anchor.py mdnav_links.py \
+              mdnav_tablelinks.py; do
     [ -f "$LIB/$helper" ] || die "missing helper: $LIB/$helper"
 done
 # shellcheck source=lib/mdnav_detect.sh
@@ -329,6 +330,15 @@ load_buffer() {
 
     local junk
     while IFS= read -rsn1 -t 0.05 junk; do :; done
+
+    # mdcat keeps a link's style inside a table cell and drops its
+    # destination, so a table is the one place a link stops being one.
+    # What was written is known here, so what went missing is put back
+    # before anything downstream looks. Nothing to do if a version turns
+    # up that carries them itself.
+    python3 "$LIB/mdnav_tablelinks.py" "$work/buffer.ansi" "$work/links.json" \
+        2>/dev/null || :
+
     # Where each link sits on screen, so a mouse position can be turned
     # back into the link under it. Worked out once, not per movement.
     LINKMAP=()

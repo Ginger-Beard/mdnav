@@ -330,6 +330,14 @@ Things that look like they should work, and don't:
 
 - Reference-style links (`[a][b]` with a separate definition) are not
   rewritten; inline `[a](b)` is.
+- Links in table cells are put back after rendering. mdcat keeps a link's
+  style inside a cell and drops its destination, so a table is the one
+  place a link stops being one; mdnav knows what it wrote, so it compares
+  that against what came out and re-attaches the difference. Only inside a
+  table, only where the text is found, and only for links that went
+  missing -- so a future mdcat that carries them itself changes nothing
+  here. A label the table had to wrap across lines is left alone; it is
+  still reachable from `l`.
 - A link to a place in the same document (`[see](#section)`) scrolls there,
   and the heading it lands on is marked until you scroll — near the end of a
   file the view cannot put it at the top, so it is worth being told where to

@@ -409,8 +409,8 @@ def main():
             target = "#" + slug
             if re.fullmatch(r"\d{1,4}", item):
                 target += "|" + item
-            links.append({"label": label, "path": target})
             if not scheme:
+                links.append({"label": label, "path": target})
                 # Nothing is listening for a click, but an anchor is still a
                 # link, and it is the only kind that was being dropped to
                 # text -- so a reader saw some links working and others
@@ -426,6 +426,8 @@ def main():
                 return "[{}]({}{})".format(
                     label, as_dest(srcfile + "#" + slug), title)
             uri = "{}://{}/{}".format(scheme, instance, quote(target))
+            links.append({"label": label, "path": target, "uri": uri,
+                          "text": heading_text(label)})
             return "[{}]({}{})".format(label, uri, title)
         path = local_path(target)
         if path is None:
@@ -444,12 +446,14 @@ def main():
         frag = target.partition("#")[2]
         if frag:
             path += "#" + anchor_slug(frag)
-        links.append({"label": label, "path": path})
         if not scheme:
+            links.append({"label": label, "path": path})
             # Nothing is listening for a click, so the path itself is the
             # honest target -- the scheme would only show as noise.
             return "[{}]({}{})".format(label, as_dest(path), title)
         uri = "{}://{}{}".format(scheme, instance, quote(path))
+        links.append({"label": label, "path": path, "uri": uri,
+                      "text": heading_text(label)})
         return "[{}]({}{})".format(label, uri, title)
 
     text = expand_includes(text, srcdir)
