@@ -18,6 +18,7 @@ than handing them to the terminal.
 import json
 import os
 import re
+import subprocess
 import sys
 from urllib.parse import quote, unquote
 
@@ -235,6 +236,56 @@ def code_ranges(text):
         else:
             merged.append([start, end])
     return [(a, b) for a, b in merged]
+
+
+# A Mermaid block, and whatever it was opened with.
+MERMAID_RE = re.compile(
+    r"^(?P<fence>`{3,}|~{3,})[ \t]*mermaid[^\n]*\n(?P<body>.*?)(?=^(?P=fence))",
+    re.MULTILINE | re.DOTALL)
+
+
+def system_font():
+    """A font family spelled the way this system spells it.
+
+    Mermaid asks for its labels in lower case, and the renderer matches a
+    family name case-sensitively, so the default matches nothing anywhere
+    and the labels are drawn as nothing at all. Asking the system for the
+    name it uses gets the capitals right, which is the whole difficulty.
+    """
+    named = os.environ.get("MDNAV_MERMAID_FONT")
+    if named is not None:
+        return named.strip()
+    try:
+        found = subprocess.run(
+            ["fc-match", "-f", "%{family[0]}", "sans-serif"],
+            capture_output=True, timeout=5).stdout.decode("utf-8", "replace").strip()
+        if found:
+            return found
+    except (OSError, subprocess.SubprocessError):
+        pass
+    # No fontconfig: macOS, where this one is always present.
+    return "Helvetica"
+
+
+def set_mermaid_font(text):
+    """Name a font in every Mermaid block that does not name one itself.
+
+    Done to the copy being rendered, never to the document -- a file
+    should not have to carry a workaround for the thing drawing it.
+    """
+    family = system_font()
+    if not family:
+        return text
+
+    def fix(m):
+        body = m.group("body")
+        if "%%{init" in body:
+            return m.group(0)
+        directive = ('%%{init: {"themeVariables": {"fontFamily": "'
+                     + family + '"}}}%%\n')
+        return m.group(0)[:m.start("body") - m.start()] + directive + body
+
+    return MERMAID_RE.sub(fix, text)
 
 
 def outside_code(text, transform):
@@ -629,6 +680,7 @@ def main():
                       "text": heading_text(label), "table": table})
         return "[{}]({}{})".format(label, uri, title)
 
+    text = set_mermaid_font(text)
     text = expand_includes(text, srcdir)
     if os.environ.get("MDNAV_HTML", "tidy") != "raw":
         text = tidy_html(text)

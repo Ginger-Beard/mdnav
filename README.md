@@ -104,34 +104,20 @@ sudo dnf install ImageMagick          # Fedora
 brew install imagemagick              # macOS
 ```
 
-#### Mermaid diagrams come out blank
+#### Mermaid diagrams
 
-If a Mermaid diagram draws its boxes and arrows but none of its text, name
-a font in the diagram itself, as the first line inside the block:
+Mermaid asks for its labels in lower case (`"trebuchet ms", verdana,
+arial, sans-serif`), and the renderer that draws these diagrams matches a
+font family case-sensitively, so nothing matches and the labels are drawn
+as nothing at all -- boxes and arrows, no text, no error. Installing the
+fonts it names does not help: the names were never missing, only spelled
+in the wrong case.
 
-````
-```mermaid
-%%{init: {"themeVariables": {"fontFamily": "DejaVu Sans"}}}%%
-flowchart TB
-  a["it has labels now"] --> b["and so does this"]
-```
-````
-
-`DejaVu Sans` is on essentially every Linux install; on macOS, `Helvetica`
-will do. Spell it exactly as the system does -- that is the whole of the
-problem. The renderer that draws these diagrams matches a font name
-case-sensitively, and Mermaid asks for its labels in lower case
-(`"trebuchet ms", verdana, arial, sans-serif`), so nothing matches and the
-labels are drawn as nothing at all, with no error. The shapes survive
-because they need no font.
-
-Installing fonts does not help: with Trebuchet MS, Verdana and Arial all
-present, the default still renders blank, while `"Verdana"` spelled with
-its capital renders correctly.
-
-This is not mdnav's doing and mdnav cannot work around it: the diagram is
-an image before mdnav ever sees it, and the text is already missing from
-the picture.
+So mdnav names a font itself, in the copy it renders rather than in your
+file, asking the system which family its `sans-serif` actually is so the
+capitals are right. A diagram that already names its own font is left
+alone. `MDNAV_MERMAID_FONT` picks a different one, and setting it empty
+turns this off.
 
 On WSL, `wslview` comes from [wslu](https://github.com/wslutilities/wslu)
 (`sudo apt install wslu`) and is only wanted if you follow links to files that
@@ -259,6 +245,7 @@ the round trip.
 | `MDCAT_BIN` | mdcat to run, if not the one on `PATH` |
 | `MDNAV_IMAGE_PROTOCOL` | force `sixel`, `kitty`, `iterm2`, or `none` |
 | `MDNAV_SLICE` | `0` to leave images whole rather than cutting them into strips |
+| `MDNAV_MERMAID_FONT` | font for Mermaid labels; empty to leave the diagram's own |
 | `MDNAV_FIFO` | where the click handler and the reader meet |
 | `MDNAV_INSTANCE` | this instance's name in the links it renders |
 | `MDNAV_SCHEME` | URL scheme, if `mdnav` collides with something |
