@@ -92,6 +92,27 @@ def tidy_html(text):
     return "".join(out)
 
 
+def source_variants(path):
+    """The source file a built path corresponds to.
+
+    Documents written for a site link to what the build produces --
+    index.html for a directory, foo.html for foo.md -- and those names do
+    not exist in the source anyone reads in a terminal.
+    """
+    yield path
+    base = path[:-len(".html")] if path.endswith(".html") else None
+    if path.endswith("/index.html") or path == "index.html":
+        directory = path[:-len("index.html")]
+        yield directory + "README.md"
+        yield directory + "index.md"
+    elif base:
+        yield base + ".md"
+        yield base + "/README.md"
+    if path.endswith("/"):
+        yield path + "README.md"
+        yield path + "index.md"
+
+
 def find_target(target, *bases):
     """Where a relative path actually points.
 
@@ -104,9 +125,17 @@ def find_target(target, *bases):
     for base in bases:
         if not base:
             continue
+        for variant in source_variants(target):
+            candidate = os.path.realpath(os.path.join(base, variant))
+            if os.path.exists(candidate):
+                return candidate
+        # A directory stands for the page inside it.
         candidate = os.path.realpath(os.path.join(base, target))
-        if os.path.exists(candidate):
-            return candidate
+        if os.path.isdir(candidate):
+            for name in ("README.md", "index.md"):
+                inner = os.path.join(candidate, name)
+                if os.path.exists(inner):
+                    return inner
 
     tail = target
     while tail.startswith("./") or tail.startswith("../"):
@@ -237,7 +266,13 @@ def main():
             return "[{}]({}{})".format(label, uri, title)
         path = local_path(target)
         if path is None:
-            return m.group(0)
+            if URL_RE.match(target):
+                return m.group(0)
+            # A local target that resolves to nothing: shown as text, not as
+            # a link. Left as a link, it would be resolved against the copy
+            # being rendered and become a path into the temp directory --
+            # which looks real, and is not.
+            return label
         links.append({"label": label, "path": path})
         if not scheme:
             # Nothing is listening for a click, so the path itself is the

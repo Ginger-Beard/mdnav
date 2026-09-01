@@ -347,6 +347,11 @@ Things that look like they should work, and don't:
   drawn, that being how a document says an image is decoration — badges either
   side of a link, usually, which drawn would bury the link between them. Code blocks are left exactly as written. `MDNAV_HTML=raw`
   turns this off.
+- Links written for a site's built output are followed to the source they
+  came from: `dir/index.html` to that directory's `README.md`, `foo.html` to
+  `foo.md`, a bare directory to the page inside it. A local link that resolves
+  to nothing is shown as text rather than as a link, since a link that cannot
+  go anywhere is worse than none.
 - mdBook directives are handled, since raw sources are read without the
   preprocessor that would expand them: `{{#ref}} path {{#endref}}` is followed
   as a link, and `{{#include path}}` is inlined, line ranges included. A
