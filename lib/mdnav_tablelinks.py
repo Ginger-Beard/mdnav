@@ -26,6 +26,19 @@ import os
 import re
 import sys
 
+DEBUG = os.environ.get("MDNAV_DEBUG", "")
+
+
+def note(fmt, *args):
+    if not DEBUG:
+        return
+    try:
+        with open(DEBUG, "a", encoding="utf-8") as fh:
+            fh.write("mdnav: table links: " + fmt.format(*args) + "\n")
+    except OSError:
+        pass
+
+
 OSC8 = re.compile(rb"\x1b\]8;;([^\x1b\x07]*)(?:\x07|\x1b\\)")
 ESCAPES = re.compile(
     rb"\x1b\]8;;[^\x1b\x07]*(?:\x07|\x1b\\)"
@@ -103,7 +116,13 @@ def table_regions(lines):
             if is_rule(lines[scan]):
                 last_rule = scan
             scan += 1
-        regions.append((index, last_rule))
+        # A rule with no row beneath it is not a table. A box drawn inside
+        # a code block is made of the same characters, and counted as a
+        # table it shifts every table after it by one -- which is not a
+        # link left plain but a link put in the wrong place.
+        if any(lines[j].strip() and not is_rule(lines[j])
+               for j in range(index, last_rule + 1)):
+            regions.append((index, last_rule))
         index = max(scan, last_rule + 1)
     return regions
 
@@ -144,7 +163,12 @@ def main():
         uri = link.get("uri")
         if not uri:
             continue
-        if present.get(uri):
+        # Only a link outside a table can have been the one emitted: a
+        # link inside one is never emitted at all, which is the whole
+        # reason for this. Letting it take the credit would leave it
+        # looking present and plain, and which one that is depends on
+        # nothing more visible than where the target was first mentioned.
+        if link.get("table") is None and present.get(uri):
             present[uri] -= 1
             continue
         if link.get("table") is not None and (
@@ -155,9 +179,21 @@ def main():
 
     regions = table_regions(
         [ESCAPES.sub(b"", l).decode("utf-8", "replace") for l in lines])
-    # The nth table written is the nth table drawn. If they cannot be
-    # counted the same way, nothing here is trustworthy and nothing is
-    # done: a link attached to the wrong row is worse than a plain one.
+    # The nth table written is the nth table drawn, so the two have to
+    # count the same. Too few and a link would be looked for in a table
+    # that is not there; too many and every table after the surplus one is
+    # off by one, which is not a link left plain but a link put in the
+    # wrong place. Either way there is nothing trustworthy to do.
+    written = None
+    try:
+        with open(links_file + ".tables", encoding="utf-8") as fh:
+            written = json.load(fh)
+    except (OSError, ValueError):
+        written = None
+    if written is not None and written != len(regions):
+        note("{} tables written, {} drawn -- leaving them alone",
+             written, len(regions))
+        return 0
     if not regions or max(l["table"] for l in missing) >= len(regions):
         return 0
 
@@ -184,6 +220,13 @@ def main():
                 at = text.find(label, from_col)
                 if at < 0:
                     break
+                before = text[at - 1] if at else " "
+                after = text[at + len(label)] if at + len(label) < len(text) else " "
+                if (before.isalnum() and label[:1].isalnum()) or (
+                        after.isalnum() and label[-1:].isalnum()):
+                    # "5" is in "2015" without being it.
+                    from_col = at + 1
+                    continue
                 begin, finish = offsets[at], offsets[at + len(label)]
                 covered = any(a <= begin and finish <= b
                               for a, b in linked_ranges(lines[index]))

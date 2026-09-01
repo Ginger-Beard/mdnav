@@ -662,6 +662,11 @@ def main():
         json.dump(links, f)
     with open(out_links + ".anchors", "w", encoding="utf-8") as f:
         json.dump(anchors, f)
+    # How many tables were written, so that whatever puts back the links a
+    # renderer drops in them can tell that it is looking at the same
+    # tables, and stop if it is not.
+    with open(out_links + ".tables", "w", encoding="utf-8") as f:
+        json.dump(len(table_spans(text)), f)
 
 
 if __name__ == "__main__":
