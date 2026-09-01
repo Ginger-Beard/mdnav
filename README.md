@@ -20,7 +20,7 @@ up/down, k/j           scroll a line
 wheel                  scroll 3 lines (MDNAV_WHEEL_LINES)
 space/PgDn, b/u/PgUp   scroll a page
 g / G                  top / bottom
-ctrl+click             follow a link
+click                  follow a link (ctrl+click hands it to the desktop)
 / ?                    search forward, backward
 n / N                  next match, previous
 esc                    clear the search
@@ -154,6 +154,11 @@ cross that gap: a URL scheme.
 3. Clicking hands `mdnav://…` to the desktop, which routes it to `mdnav-open`.
 4. `mdnav-open` writes the path into a FIFO the running mdnav is reading, and
    mdnav renders it in place.
+
+A plain click never leaves the terminal: mdnav is told where the mouse is and
+knows where its links are, so it follows the link itself. The round trip above
+is what happens when the desktop is asked instead — ctrl+click, or a click on a
+link in scrollback after mdnav has exited.
 
 Each instance has its own FIFO and names itself in the links it renders --
 `mdnav://<instance>/<path>` -- so with several open at once, a click goes back

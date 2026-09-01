@@ -60,6 +60,10 @@ mdnav_read_key() {
         case "$MOUSE_BTN" in
             64) KEY="wheel-up" ;;
             65) KEY="wheel-down" ;;
+            0)
+                # The left button. Acted on when released, so a click is one
+                # event rather than two.
+                if [ "$action" = "m" ]; then KEY="click"; else KEY="ignore"; fi ;;
             *)
                 # 32 and up with no button held is the mouse simply moving.
                 if [ "$action" = "M" ] && [ "$MOUSE_BTN" -ge 32 ]; then

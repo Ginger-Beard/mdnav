@@ -708,6 +708,44 @@ hover_text() {
     printf '%s' "$uri"
 }
 
+# Following the link under a click, without the terminal in the middle.
+# mdnav knows where the links are and is being told where the mouse is, so
+# a plain click is enough -- no modifier, and none of the confirmation the
+# terminal raises when it is the one asked to open something.
+follow_click() {
+    local row="$1" col="$2" uri rest
+    hover_at "$row" "$col" || return 1
+    uri="$HOVER_URI"
+    [ -n "$uri" ] || return 1
+    case "$uri" in
+        "$SCHEME://"*)
+            rest="${uri#"$SCHEME://"}"
+            rest="${rest#*/}"                 # drop the instance
+            rest="${rest//%23/#}"
+            rest="${rest//%7C/|}"
+            case "$rest" in
+                "#"*)
+                    goto_anchor "$rest" && return 0
+                    return 1 ;;
+                *)
+                    # Decoded properly rather than by substitution: a path
+                    # may hold a percent sign of its own.
+                    rest="$(python3 -c 'import sys,urllib.parse as u;print(u.unquote(sys.argv[1]))' "$rest" 2>/dev/null)"
+                    [ -n "$rest" ] || return 1
+                    goto "/$rest" && return 0
+                    return 1 ;;
+            esac ;;
+        *)
+            # Somewhere outside this document: the desktop knows what to do
+            # with it and mdnav does not.
+            if command -v wslview >/dev/null 2>&1; then wslview "$uri" >/dev/null 2>&1 &
+            elif command -v xdg-open >/dev/null 2>&1; then xdg-open "$uri" >/dev/null 2>&1 &
+            elif command -v open >/dev/null 2>&1; then open "$uri" >/dev/null 2>&1 &
+            fi
+            return 1 ;;
+    esac
+}
+
 status() {
     local n pos total avail left right pad
     n="$LINK_COUNT"
@@ -728,7 +766,7 @@ status() {
     elif [ -n "$SEARCH_PAT" ]; then
         left="$left  /${SEARCH_PAT} (${#MATCH_LINE[@]})"
     fi
-    right="ctrl+click a link"
+    right="click a link"
     [ ${#stack[@]} -gt 0 ] && right="$right · p back"
     right="$right · l list · q quit "
 
@@ -922,6 +960,13 @@ while :; do
             if page_forward; then ANCHOR_LINE=-1; draw_all; status; fi ;;
         pgup|char:u|char:b)
             if page_back; then ANCHOR_LINE=-1; draw_all; status; fi ;;
+        click)
+            if follow_click "$MOUSE_ROW" "$MOUSE_COL"; then
+                case "$HOVER_URI" in
+                    *%23*) draw_all; status ;;      # a place in this document
+                    *)     load_buffer; draw_all; status ;;
+                esac
+            fi ;;
         char:/)
             run_search 1 "/"
             draw_all; status ;;
