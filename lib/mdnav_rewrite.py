@@ -40,14 +40,18 @@ URL_RE = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.-]*:")
 HEADING_RE = re.compile(r"^(#{1,6})[ \t]+(.+?)[ \t]*#*[ \t]*$", re.MULTILINE)
 # What a heading is called once it is a link target: lowercased, stripped of
 # anything that is not a word, and spaces hyphenated. Both GitHub and mdBook
-# spell it this way.
+# spell it this way, and both hyphenate each space rather than a run of them
+# -- so a heading punctuated between two words ("A -- B", once the dash is
+# stripped) leaves two spaces and gets two hyphens. Collapsing them here
+# would name every such heading differently from the document that links to
+# it.
 def anchor_slug(text):
     text = re.sub(r"`([^`]*)`", r"\1", text)
     text = re.sub(r"\*\*?([^*]*)\*?\*", r"\1", text)
     text = re.sub(r"\[([^\]]*)\]\([^)]*\)", r"\1", text)
     text = text.strip().lower()
     text = re.sub(r"[^\w\s-]", "", text, flags=re.UNICODE)
-    return re.sub(r"[\s]+", "-", text)
+    return re.sub(r"\s", "-", text)
 
 
 # Markdown allows raw HTML, and a terminal renderer prints it verbatim --
@@ -223,6 +227,17 @@ def main():
     # Where each anchor points, by the text of the heading that defines it.
     anchors = {anchor_slug(m.group(2)): m.group(2).strip()
                for m in HEADING_RE.finditer(text)}
+    # The same anchors with their hyphens run together, for a document that
+    # wrote one hyphen where the heading gives two. Nothing else resolves
+    # such a target, but a reader that finds the heading anyway is worth
+    # more than one that drops the link. Only consulted when the anchor as
+    # written matches nothing, and only where the loose spelling names a
+    # single heading.
+    loose = {}
+    for key in anchors:
+        short = re.sub(r"-+", "-", key)
+        if short != key:
+            loose[short] = None if short in loose else key
 
     def local_path(target):
         """Absolute path for a local target, or None if it isn't one."""
@@ -250,7 +265,9 @@ def main():
             # does not exist.
             slug = anchor_slug(target[1:])
             if slug not in anchors:
-                return label
+                slug = loose.get(re.sub(r"-+", "-", slug))
+                if slug is None:
+                    return label
             # A citation marker names an item, while the anchor names only
             # the section holding it -- Markdown has no anchor per item, so
             # documents point every citation at the same heading. The label
