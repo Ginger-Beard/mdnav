@@ -63,9 +63,21 @@ cd mdnav
 ./install.sh
 ```
 
-Also needs `python3` and bash 3.2 or newer.
-[ImageMagick](https://imagemagick.org) is optional but wanted — see
-[Images are sliced](#images-are-sliced).
+### What it needs
+
+| | |
+|---|---|
+| `mdcat` | does the rendering; see above |
+| `python3` | rewriting links, slicing images, searching. Standard library only |
+| bash 3.2+ | so stock macOS bash is enough |
+| `stty`, `tput` | terminal size and raw input; coreutils and ncurses |
+| ImageMagick (`convert`) | **strongly wanted**: without it images are not sliced, and a tall one jumps into view rather than scrolling. See [Images are sliced](#images-are-sliced) |
+| `xdg-open`, `wslview`, or `open` | only for links to files that are not Markdown, which are handed to the desktop |
+
+Registering the `mdnav://` scheme uses whatever the platform provides, and only
+during `install.sh`: `reg.exe` and `wscript` on WSL, `xdg-mime` and
+`update-desktop-database` on Linux, `osacompile` and Launch Services on macOS.
+All ship with their systems.
 
 `install.sh` symlinks `mdnav` into `~/.local/bin` and registers the `mdnav://`
 scheme with your desktop. `./uninstall.sh` removes both, including the registry
