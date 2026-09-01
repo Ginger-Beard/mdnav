@@ -264,10 +264,38 @@ for i, (label, where) in enumerate(rows, 1):
 PY
 }
 
+# The window, in cells. Asked of the kernel first, which knows the size of
+# every terminal, rather than of terminfo, which only knows terminals whose
+# entry is installed here -- and a terminal too new or too local for that,
+# or one named across an ssh to an older machine, makes tput fail. Falling
+# back to 80x24 there is worse than it sounds: it is not a stale size but a
+# wrong one, and every line is wrapped and every page measured against a
+# window nobody is looking at.
+term_size() {
+    local size=""
+    size="$(stty size 2>/dev/null < /dev/tty)" || size="$(stty size 2>/dev/null)"
+    case "$size" in
+        [0-9]*\ [0-9]*)
+            rows="${size%% *}"
+            cols="${size##* }" ;;
+        *)
+            cols="$(tput cols 2>/dev/null)" || cols=""
+            rows="$(tput lines 2>/dev/null)" || rows=""
+            [ -n "$cols" ] || cols="${COLUMNS:-80}"
+            [ -n "$rows" ] || rows="${LINES:-24}" ;;
+    esac
+    case "$cols" in ''|*[!0-9]*) cols=80 ;; esac
+    case "$rows" in ''|*[!0-9]*) rows=24 ;; esac
+    # Narrower than this and there is nothing to read; shorter and there is
+    # no room for a document and a status bar both.
+    [ "$cols" -lt 20 ] && cols=20
+    [ "$rows" -lt 3 ] && rows=3
+    return 0
+}
+
 load_buffer() {
     rewrite
-    cols="$(tput cols 2>/dev/null || echo 80)"
-    rows="$(tput lines 2>/dev/null || echo 24)"
+    term_size
 
     local args=(--ansi --columns "$cols")
     [ -n "$IMAGE_PROTOCOL" ] && args+=(--image-protocol "$IMAGE_PROTOCOL")
