@@ -115,16 +115,13 @@ And this should be a diagram rather than a code block — it is drawn by
 mdcat, sliced into strips, and scrolled through like anything else:
 
 ```mermaid
-flowchart LR
-  file["a Markdown file"] --> rewrite["mdnav rewrites its links"]
-  rewrite --> mdcat["mdcat renders it"]
-  mdcat --> slice["images cut into strips"]
-  slice --> screen["the pager draws it"]
-  screen -->|you click a link| decide{"what is it?"}
-  decide -->|Markdown, a directory| file
-  decide -->|text| show["shown here, highlighted"]
-  decide -->|a picture| file
-  decide -->|a document, media, the web| desktop["your desktop opens it"]
+flowchart TB
+  file["a Markdown file"] --> render["mdnav rewrites its links,<br/>mdcat renders it,<br/>images are cut into strips"]
+  render --> screen["the pager draws it"]
+  screen --> decide{"you click a link"}
+  decide -->|"Markdown, a directory,<br/>text, a picture"| file
+  decide -->|"a document, media,<br/>a web address"| desktop["your desktop opens it"]
+  decide -->|"anything else"| refuse["refused, and it says so"]
 ```
 
 ### What it needs

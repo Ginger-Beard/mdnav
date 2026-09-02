@@ -172,6 +172,7 @@ top=0
 rows=24
 cols=80
 cell_h=20
+cell_w=10
 
 work="$(mktemp -d)"
 owns_fifo=0
@@ -216,12 +217,12 @@ query_cell_size() {
     stty "$saved" 2>/dev/null
     h="${reply##*\[6;}"; h="${h%%;*}"
     w="${reply##*;}"
-    # The width is in the reply too, and is not wanted: an image is cut by
-    # its height alone. It is still checked, because a reply that does not
-    # parse is not a reply worth believing the height of either.
     case "$h" in ''|*[!0-9]*) return ;; esac
     case "$w" in ''|*[!0-9]*) return ;; esac
     cell_h="$h"
+    # The width is wanted after all: it is how many pixels wide the window
+    # is, which is what a picture has to be narrowed to.
+    cell_w="$w"
 }
 
 rewrite() {
@@ -430,7 +431,7 @@ render_document() {
     # the Markdown says so.
     if [ "$SLICE" = 1 ] && \
        python3 "$LIB/mdnav_slice.py" "$work/buffer.ansi" "$work/sliced.ansi" \
-           "$cell_h" "$CACHE" 2>/dev/null; then
+           "$cell_h" "$CACHE" "$(( cols * cell_w ))" 2>/dev/null; then
         mv "$work/sliced.ansi" "$work/buffer.ansi"
     elif [ -n "${MDNAV_DEBUG:-}" ] && grep -q $'\x1bP' "$work/buffer.ansi" 2>/dev/null; then
         # Worth saying: an image that is not cut into strips cannot be drawn
@@ -1110,7 +1111,7 @@ status() {
     # The brackets are part of what answers, so pointing at one works, and
     # what is drawn and what is clickable stay the same thing.
     local -a hit_at=() hit_do=()
-    right="click a link "
+    right=""
     if [ ${#stack[@]} -gt 0 ]; then
         hit_at+=("$(( ${#right} + 1 )):8"); hit_do+=("back")
         right="$right [p back]"

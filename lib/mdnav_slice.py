@@ -16,6 +16,7 @@ Images no taller than one row are left alone; so is anything that cannot
 be decoded, which then behaves as it did before.
 
 usage: mdnav_slice.py <buffer-in> <buffer-out> <cell-height> <cache-dir>
+       [max-width-in-pixels]
 """
 
 import glob
@@ -37,9 +38,9 @@ def strip_height(blob):
     return int(m.group(2)) if m else 0
 
 
-def slice_blob(blob, cell_h, cache_dir):
+def slice_blob(blob, cell_h, cache_dir, max_width=0):
     """Strips for one image, or None if it cannot be sliced."""
-    key = hashlib.sha1(blob).hexdigest() + "-{}".format(cell_h)
+    key = hashlib.sha1(blob).hexdigest() + "-{}-{}".format(cell_h, max_width)
     cached = os.path.join(cache_dir, key + ".strips")
     if os.path.exists(cached):
         with open(cached, "rb") as fh:
@@ -51,7 +52,15 @@ def slice_blob(blob, cell_h, cache_dir):
             with open(src, "wb") as fh:
                 fh.write(blob)
             png = os.path.join(td, "in.png")
-            subprocess.run(["convert", src, png], check=True, capture_output=True)
+            # Narrowed to the window on the way past, if it is wider than
+            # one. The renderer cannot do this: writing to a file, it has no
+            # way to ask the terminal how many pixels a column is, so it
+            # draws at the picture's own size and a wide diagram runs off
+            # the right. Here the size is known, and something is already
+            # being asked to open the image.
+            scale = ["-resize", "{}x>".format(max_width)] if max_width > 0 else []
+            subprocess.run(["convert", src] + scale + [png],
+                           check=True, capture_output=True)
             subprocess.run(
                 ["convert", png, "-crop", "x{}".format(cell_h), "+repage",
                  os.path.join(td, "s_%04d.png")],
@@ -85,6 +94,7 @@ def slice_blob(blob, cell_h, cache_dir):
 def main():
     src, dst, cell_h, cache_dir = sys.argv[1:5]
     cell_h = int(cell_h)
+    max_width = int(sys.argv[5]) if len(sys.argv) > 5 else 0
     if cell_h < 1:
         return 1
 
@@ -105,7 +115,7 @@ def main():
             before = line[pos:m.start()]
             if before.strip():
                 out.append(before)
-            strips = slice_blob(m.group(0), cell_h, cache_dir)
+            strips = slice_blob(m.group(0), cell_h, cache_dir, max_width)
             if strips is None:
                 out.append(m.group(0))
             else:
