@@ -18,6 +18,7 @@ than handing them to the terminal.
 import json
 import os
 import re
+import stat
 import subprocess
 import sys
 from urllib.parse import quote, unquote
@@ -466,6 +467,56 @@ def directory_listing(path):
     return "\n".join(lines)
 
 
+# What is at a path, or None. One question of the filesystem rather than
+# the several that asking twice would cost -- a document with hundreds of
+# links asks this thousands of times, and on a Windows drive seen through
+# WSL each question is expensive enough to be felt.
+def probe(path):
+    try:
+        return os.stat(path)
+    except (OSError, ValueError):
+        return None
+
+
+DIRS = {}
+
+
+def directory_exists(path):
+    """Whether a directory is there, remembered.
+
+    Nothing inside a directory that does not exist is worth asking about,
+    and a document's links share directories heavily -- so the question is
+    asked once per directory rather than once per candidate.
+    """
+    if not path:
+        return True
+    known = DIRS.get(path)
+    if known is None:
+        info = probe(path)
+        known = info is not None and stat.S_ISDIR(info.st_mode)
+        DIRS[path] = known
+    return known
+
+
+# Resolved directories, and answers already found. Links in a document
+# point into the same few directories over and over, and often at the same
+# file more than once; resolving a path walks every component of it, which
+# is the expensive part of looking on a filesystem reached across a
+# boundary, so it is worth doing once each.
+REALDIR = {}
+RESOLVED = {}
+
+
+def real_path(path):
+    """`path` with its directory resolved, the directory cached."""
+    directory, name = os.path.split(path)
+    resolved = REALDIR.get(directory)
+    if resolved is None:
+        resolved = os.path.realpath(directory)
+        REALDIR[directory] = resolved
+    return os.path.join(resolved, name) if name else resolved
+
+
 def spellings(target):
     """The same target as the document wrote it, and as the filesystem
     spells it. An editor inserting a link percent-encodes the spaces in a
@@ -485,11 +536,16 @@ def find_target(target, *bases):
     Try each plausible base, then look for the tail of the path in the
     directories above the document, and give up rather than inventing an
     answer that happens to be a valid string."""
+    key = (target, bases)
+    if key in RESOLVED:
+        return RESOLVED[key]
+    answer = None
     for spelling in spellings(target):
-        found = resolve_one(spelling, bases)
-        if found is not None:
-            return found
-    return None
+        answer = resolve_one(spelling, bases)
+        if answer is not None:
+            break
+    RESOLVED[key] = answer
+    return answer
 
 
 def resolve_one(target, bases):
@@ -497,19 +553,25 @@ def resolve_one(target, bases):
         if not base:
             continue
         for variant in source_variants(target):
-            candidate = os.path.realpath(os.path.join(base, variant))
-            if os.path.isdir(candidate):
+            # Resolved only once something is known to be there. Resolving
+            # a path walks every component of it, which is most of the cost
+            # of looking, and most candidates are not there.
+            candidate = os.path.join(base, variant)
+            if not directory_exists(os.path.dirname(candidate)):
+                continue
+            info = probe(candidate)
+            if info is None:
+                continue
+            if stat.S_ISDIR(info.st_mode):
                 # A directory stands for the page inside it, the way every
                 # documentation tree reads one: docs/setup/ is the setup
                 # section, and README is its front page. Where there is no
                 # such page the directory stands for itself and is listed.
                 for name in ("README.md", "index.md"):
                     inner = os.path.join(candidate, name)
-                    if os.path.exists(inner):
-                        return inner
-                return candidate
-            if os.path.exists(candidate):
-                return candidate
+                    if probe(inner) is not None:
+                        return real_path(inner)
+            return real_path(candidate)
 
     tail = target
     while tail.startswith("./") or tail.startswith("../"):
@@ -522,8 +584,14 @@ def resolve_one(target, bases):
         here = base
         for _ in range(8):
             candidate = os.path.join(here, tail)
-            if os.path.exists(candidate):
-                return os.path.realpath(candidate)
+            if not directory_exists(os.path.dirname(candidate)):
+                parent = os.path.dirname(here)
+                if parent == here:
+                    break
+                here = parent
+                continue
+            if probe(candidate) is not None:
+                return real_path(candidate)
             parent = os.path.dirname(here)
             if parent == here:
                 break
