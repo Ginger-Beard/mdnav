@@ -463,9 +463,15 @@ This needs ImageMagick (`convert`) and a sixel terminal. Without either, images
 are left whole for mdcat to draw — everything still works, but a tall image
 jumps into view rather than scrolling.
 
-Strips are cached under `~/.cache/mdnav`, keyed by the image's own content and
-the height of a terminal cell -- so an edited image simply gets a different key
-rather than a stale answer. Slicing a diagram takes about a sixth of a second
+A picture wider than the window is narrowed to it on the way past. The
+renderer cannot do that: writing to a file, it has no way to ask the
+terminal how many pixels a column is, so it draws at the picture's own size
+and a wide diagram runs off the right. mdnav has asked, so it can.
+
+Strips are cached under `~/.cache/mdnav`, keyed by the image's own content,
+the height of a terminal cell and the width it was narrowed to -- so an
+edited image, or a resized window, gets a different key rather than a stale
+answer. Slicing a diagram takes about a sixth of a second
 the first time and a fraction of that afterwards. The cache is safe to delete;
 it refills itself.
 
