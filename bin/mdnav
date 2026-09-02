@@ -114,7 +114,7 @@ command -v "$MDCAT" >/dev/null 2>&1 || die "mdcat not found (set MDCAT_BIN to ov
 command -v python3 >/dev/null 2>&1 || die "python3 is required"
 for helper in mdnav_rewrite.py mdnav_detect.sh mdnav_keys.sh mdnav_slice.py \
               mdnav_spans.py mdnav_anchor.py mdnav_links.py \
-              mdnav_tablelinks.py; do
+              mdnav_tablelinks.py mdnav_kind.py mdnav_number.py; do
     [ -f "$LIB/$helper" ] || die "missing helper: $LIB/$helper"
 done
 # shellcheck source=lib/mdnav_detect.sh
@@ -160,6 +160,10 @@ declare -a SPAN=()
 declare -a ROWLINE=()
 declare -a LINKMAP=()
 HOVER_URI=""
+# Something to tell the reader, shown on the bar until the next thing
+# happens. Used where an action declines, since a click that does nothing
+# and says nothing is indistinguishable from one that missed.
+NOTICE=""
 # Where each hint sits on the bar, as "first:last:what".
 declare -a BAR_HITS=()
 declare -a MATCH_LINE=()
@@ -437,6 +441,14 @@ render_document() {
             "$([ "${MDNAV_SLICE:-1}" = 0 ] && echo "off by request" || echo on)" \
             "${IMAGE_PROTOCOL:-auto}" \
             "$(command -v convert >/dev/null 2>&1 && echo found || echo missing)" >&4
+    fi
+
+    # A file shown as a page gets its line numbers here, after the renderer
+    # has coloured it: put in beforehand they would be part of the code,
+    # and the highlighter would not know what it was looking at.
+    if [ "${MDNAV_LINE_NUMBERS:-1}" != 0 ]; then
+        python3 "$LIB/mdnav_number.py" "$work/buffer.ansi" \
+            "$(cat "$work/links.json.code" 2>/dev/null || echo 0)" 2>/dev/null || :
     fi
 
     # Long lines are left whole for the terminal to wrap, so that selecting
@@ -772,9 +784,17 @@ goto() {
         return 0
     fi
     [ -f "$target" ] || return 1
-    case "$target" in
-        *.md|*.markdown|*.mkd) ;;
-        *)  open_desktop "$target"
+    # What a file is, read from what is in it rather than from its name. A
+    # document is rendered, anything else that reads as text is shown here
+    # -- where it can do nothing -- and only pictures, documents and media
+    # are handed over. Whatever is left is refused, because handing over
+    # what is not recognised is how clicking a link runs a program.
+    case "$(python3 "$LIB/mdnav_kind.py" "$target" 2>/dev/null)" in
+        markdown|text) ;;
+        desktop)
+            open_desktop "$target"
+            return 1 ;;
+        *)  NOTICE="not shown: ${target##*/} is neither a document nor text"
             return 1 ;;
     esac
     stack+=("$current")
@@ -1059,7 +1079,10 @@ status() {
     fi
 
     left=" ${current##*/}  ${pos}  ${n} link(s)"
-    if [ -n "$SEARCH_MSG" ]; then
+    if [ -n "$NOTICE" ]; then
+        left=" $NOTICE"
+        NOTICE=""
+    elif [ -n "$SEARCH_MSG" ]; then
         left="$left  /${SEARCH_PAT}: ${SEARCH_MSG}"
     elif [ -n "$SEARCH_PAT" ] && [ "$MATCH_POS" -ge 0 ]; then
         left="$left  /${SEARCH_PAT} [$(( MATCH_POS + 1 ))/${#MATCH_LINE[@]}]"
@@ -1322,6 +1345,10 @@ while :; do
                             HOVER_URI=""
                             load_buffer; draw_all; status ;;
                 esac
+            elif [ -n "$NOTICE" ]; then
+                # It declined, and said why: show that rather than nothing.
+                HOVER_URI=""
+                status
             fi ;;
         char:/)
             run_search 1 "/"

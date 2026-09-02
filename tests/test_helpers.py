@@ -168,6 +168,70 @@ check("a lone rule is not a table",
       tablelinks.table_regions(["", "────────", "", "text"]), [])
 
 
+# --- what to do with a file ------------------------------------------
+# Nothing here trusts a name: opening and running are the same gesture on
+# every desktop, so what is handed over has to be identified by content.
+group("deciding what a file is")
+kind = load("mdnav_kind")
+with tempfile.TemporaryDirectory() as tmp:
+    def make(name, data):
+        path = os.path.join(tmp, name)
+        io.open(path, "wb").write(data)
+        return path
+
+    png = b"\x89PNG\r\n\x1a\n" + b"\x00" * 40
+    check("a picture is handed over", kind.kind(make("a.png", png)), "desktop")
+    check("even with no extension", kind.kind(make("nameless", png)), "desktop")
+    check("a picture calling itself a document is still a picture",
+          kind.kind(make("lying.pdf", png)), "desktop")
+    # The one that matters: a program renamed to look harmless.
+    check("a program calling itself a document is refused",
+          kind.kind(make("evil.pdf", b"\x7fELF\x02\x01\x01" + b"\x00" * 40)),
+          "refuse")
+    check("a program is refused",
+          kind.kind(make("thing", b"MZ\x90\x00\x03" + b"\x00" * 40)), "refuse")
+    # Text is shown here, where it cannot do anything, whatever it is called.
+    check("a script is shown, not run",
+          kind.kind(make("go.sh", b"#!/bin/sh\nrm -rf /\n")), "text")
+    check("a batch file is shown, not run",
+          kind.kind(make("go.bat", b"echo hello\r\n")), "text")
+    check("a desktop entry is shown, not run",
+          kind.kind(make("x.desktop", b"[Desktop Entry]\nExec=rm\n")), "text")
+    check("a file with no extension is read to find out",
+          kind.kind(make("Dockerfile", b"FROM alpine\n")), "text")
+    check("markdown is a document", kind.kind(make("a.md", b"# hi\n")), "markdown")
+    # A macOS bundle is a directory that is a program.
+    os.makedirs(os.path.join(tmp, "Thing.app"))
+    check("a bundle is refused", kind.kind(os.path.join(tmp, "Thing.app")), "refuse")
+    os.makedirs(os.path.join(tmp, "plain-folder"))
+    check("an ordinary folder is not",
+          kind.kind(os.path.join(tmp, "plain-folder")), "markdown")
+
+
+# --- showing a file as a page ----------------------------------------
+group("files shown as pages")
+with tempfile.TemporaryDirectory() as tmp:
+    src = os.path.join(tmp, "sample.py")
+    io.open(src, "w").write("import os\n" + "x = 1\n" * 3 + "y = " + "9" * 300 + "\n")
+    page = rewrite.as_code_page(src)
+    check("it is fenced as what it is", "```python" in page, True)
+    check("it carries no numbers of its own", "  1  import os" in page, False)
+    check("the name is the heading", page.startswith("# sample.py"), True)
+
+    # The numbers go on after rendering, and have to land on the file's own
+    # lines -- including one far too long for the window, which the terminal
+    # wraps but which is still one line.
+    buf = os.path.join(tmp, "buf")
+    io.open(buf, "wb").write(b"\n\nheading\n\n" + b"\n".join(
+        [b"import os", b"x = 1", b"x = 1", b"x = 1", b"y = " + b"9" * 300]) + b"\n\n")
+    subprocess.run([sys.executable, os.path.join(LIB, "mdnav_number.py"), buf, "5"],
+                   capture_output=True)
+    numbered = io.open(buf, "rb").read().decode()
+    check("the first line is numbered 1", "\x1b[2m1\x1b[22m  import os" in numbered, True)
+    check("the long line is numbered once", numbered.count("\x1b[2m5\x1b[22m"), 1)
+    check("the heading above is left alone", "\x1b[2m" in numbered.split("heading")[0], False)
+
+
 # --- summary ----------------------------------------------------------
 print()
 if FAILURES:

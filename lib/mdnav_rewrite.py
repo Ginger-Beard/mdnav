@@ -429,6 +429,88 @@ def table_spans(text):
     return spans
 
 
+# What to highlight a file as, by the name it goes by. Only for choosing a
+# colour scheme, so a wrong guess costs nothing and an unknown one is left
+# plain.
+LANGUAGES = {
+    ".py": "python", ".rb": "ruby", ".pl": "perl", ".lua": "lua",
+    ".sh": "bash", ".bash": "bash", ".zsh": "bash", ".fish": "fish",
+    ".c": "c", ".h": "c", ".cc": "cpp", ".cpp": "cpp", ".hpp": "cpp",
+    ".rs": "rust", ".go": "go", ".java": "java", ".kt": "kotlin",
+    ".js": "javascript", ".mjs": "javascript", ".ts": "typescript",
+    ".tsx": "tsx", ".jsx": "jsx", ".php": "php", ".cs": "csharp",
+    ".swift": "swift", ".scala": "scala", ".hs": "haskell", ".ml": "ocaml",
+    ".sql": "sql", ".r": "r", ".jl": "julia", ".ex": "elixir",
+    ".html": "html", ".htm": "html", ".xml": "xml", ".css": "css",
+    ".scss": "scss", ".json": "json", ".yaml": "yaml", ".yml": "yaml",
+    ".toml": "toml", ".ini": "ini", ".cfg": "ini", ".conf": "ini",
+    ".diff": "diff", ".patch": "diff", ".make": "makefile",
+    ".tf": "terraform", ".vim": "vim", ".el": "lisp", ".clj": "clojure",
+}
+
+SHEBANGS = {
+    "python": "python", "bash": "bash", "sh": "bash", "zsh": "bash",
+    "node": "javascript", "ruby": "ruby", "perl": "perl",
+}
+
+NAMED = {
+    "makefile": "makefile", "dockerfile": "dockerfile",
+    "gemfile": "ruby", "rakefile": "ruby", "vagrantfile": "ruby",
+    "cmakelists.txt": "cmake",
+}
+
+
+def language_of(path, first_line):
+    """What to tell the renderer this file is written in."""
+    name = os.path.basename(path).lower()
+    if name in NAMED:
+        return NAMED[name]
+    language = LANGUAGES.get(os.path.splitext(path)[1].lower())
+    if language:
+        return language
+    if first_line.startswith("#!"):
+        for word, named in SHEBANGS.items():
+            if word in first_line:
+                return named
+    return ""
+
+
+def as_code_page(path):
+    """A file that is not a document, shown as one.
+
+    Wrapped in a fenced block, so the renderer highlights it and the pager
+    handles it like anything else -- and so that a file which is not a
+    document is read here rather than opened by something that might run
+    it.
+
+    The numbers are added afterwards, to the rendered output, because
+    inside the fence they would become part of the code and the
+    highlighter would not recognise what it was colouring.
+    """
+    try:
+        with open(path, encoding="utf-8", errors="replace") as handle:
+            body = handle.read()
+    except OSError as error:
+        return "# {}\n\nCannot be read: {}\n".format(os.path.basename(path), error)
+
+    lines = body.split("\n")
+    if lines and lines[-1] == "":
+        lines.pop()
+    language = language_of(path, lines[0] if lines else "")
+
+    # A fence long enough that anything inside it cannot end it early.
+    longest = 0
+    for line in lines:
+        stripped = line.lstrip()
+        if stripped.startswith("```"):
+            run = len(stripped) - len(stripped.lstrip("`"))
+            longest = max(longest, run)
+    fence = "`" * max(3, longest + 1)
+
+    return "# {}\n\n{}{}\n{}\n{}\n".format(
+        os.path.basename(path), fence, language, "\n".join(lines), fence)
+
+
 def directory_listing(path):
     """A directory written out as a page.
 
@@ -669,6 +751,7 @@ def main():
     image_mode = sys.argv[5] if len(sys.argv) > 5 else "inline"
     out_images = sys.argv[6] if len(sys.argv) > 6 else None
     srcfile = os.path.realpath(src)
+    code_lines = 0
     if os.path.isdir(srcfile):
         # A directory is its own directory: its entries are named relative
         # to it, not to whatever holds it.
@@ -676,7 +759,14 @@ def main():
         text = directory_listing(srcfile)
     else:
         srcdir = os.path.dirname(srcfile)
-        text = open(src, encoding="utf-8").read()
+        if os.path.splitext(srcfile)[1].lower() in (
+                ".md", ".markdown", ".mkd", ".mdown", ".mkdn", ".mdwn"):
+            text = open(src, encoding="utf-8").read()
+        else:
+            # Not a document: shown as what it is, rather than handed to
+            # something that might do more than show it.
+            text = as_code_page(srcfile)
+            code_lines = text.count("\n") - 4
     links = []
     # Where each anchor points, by the text of the heading that defines it.
     anchors = {anchor_slug(m.group(2)): heading_text(m.group(2))
@@ -840,6 +930,10 @@ def main():
     # tables, and stop if it is not.
     with open(out_links + ".tables", "w", encoding="utf-8") as f:
         json.dump(len(table_spans(text)), f)
+    # How many lines this page is of a file, for numbering them once they
+    # are rendered. Zero for an ordinary document.
+    with open(out_links + ".code", "w", encoding="utf-8") as f:
+        json.dump(code_lines, f)
 
 
 if __name__ == "__main__":
