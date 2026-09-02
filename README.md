@@ -216,8 +216,29 @@ clicking. Nothing needs installing at all for that; `./bin/mdnav` runs as-is.
   no such page is written out as one: a listing of what it holds, each
   entry a link, so a tree can be walked down into and `p` walks back out.
   A directory works as an argument too: `mdnav ~/notes`.
-- **Anything else** -- a PDF, a spreadsheet, a web address -- which is
-  handed to whatever opens such things on your system.
+- **A file that is text** -- source code, a config file, a log, a
+  `Dockerfile` -- which is shown here, highlighted, with the file's own
+  line numbers down the side. `MDNAV_LINE_NUMBERS=0` leaves them off, which
+  is what to do when the point is to copy the text back out.
+- **A picture, a document or a media file** -- a PNG, a PDF, a spreadsheet
+  -- which is handed to whatever opens such things on your system. So is a
+  web address.
+- **Anything else is refused**, and the bar says so.
+
+That last one is deliberate. Opening a file and running it are the same
+gesture on every desktop: `explorer.exe` starts a `.exe` or a `.bat`,
+`open` launches a `.app` or runs a `.command`, and `xdg-open` will do
+whatever the desktop has been told to for a `.desktop` file or a script.
+A link in a document you did not write is not a thing to hand over
+blindly.
+
+So nothing is handed over on the strength of its name. What a file is, is
+read from what is in it: a picture by the bytes every picture starts with,
+text by reading it. Only pictures, documents and media are passed on;
+anything that reads as text is shown here, where it can do nothing; and
+what is left over -- a program, an installer, an archive, a macOS bundle
+-- is refused. A program renamed `report.pdf` is still refused, and a
+picture with no extension at all still opens.
 
 A local link that resolves to nothing is shown as plain text rather than as
 a link, since a link that cannot go anywhere is worse than none. Run with
@@ -298,6 +319,7 @@ no dialog appears, whether the link opens here or in a Windows application.
 | `MDNAV_IMAGE_PROTOCOL` | force `sixel`, `kitty`, `iterm2`, or `none` |
 | `MDNAV_SLICE` | `0` to leave images whole rather than cutting them into strips |
 | `MDNAV_MERMAID_FONT` | font for Mermaid labels; empty to leave the diagram's own |
+| `MDNAV_LINE_NUMBERS` | `0` to show a file without its line numbers |
 | `MDNAV_FIFO` | where the click handler and the reader meet |
 | `MDNAV_INSTANCE` | this instance's name in the links it renders |
 | `MDNAV_SCHEME` | URL scheme, if `mdnav` collides with something |
