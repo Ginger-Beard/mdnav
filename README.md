@@ -92,7 +92,8 @@ cd mdnav
 | bash 3.2+ | so stock macOS bash is enough |
 | `stty`, `tput` | terminal size and raw input; coreutils and ncurses |
 | ImageMagick (`convert`) | **strongly wanted**: without it images are not sliced, and a tall one jumps into view rather than scrolling. See [Images are sliced](#images-are-sliced) |
-| `xdg-open`, `wslview`, or `open` | only for links to files that are not Markdown, which are handed to the desktop |
+| `xdg-open` (Linux), `open` (macOS) | only for links to files that are not Markdown, which are handed to the desktop |
+| `wslview` (WSL, optional) | from [wslu](https://github.com/wslutilities/wslu). Not needed -- see [Opening things on WSL](#opening-things-on-wsl) |
 
 Most of that is already on a working system; `python3`, `stty` and `tput`
 effectively always are. ImageMagick usually is not:
@@ -119,9 +120,34 @@ capitals are right. A diagram that already names its own font is left
 alone. `MDNAV_MERMAID_FONT` picks a different one, and setting it empty
 turns this off.
 
-On WSL, `wslview` comes from [wslu](https://github.com/wslutilities/wslu)
-(`sudo apt install wslu`) and is only wanted if you follow links to files that
-are not Markdown; without it those are simply not opened.
+#### Opening things on WSL
+
+A link to something that is not Markdown -- a PDF, a spreadsheet, a web
+address -- is handed to whatever opens such things. Under WSL that is
+Windows, and `xdg-open` does not know it: a distribution installed to be
+used from a terminal has no desktop, and so no idea what opens a PDF.
+Nothing happens, and nothing says why.
+
+So mdnav crosses over itself, converting the path with `wslpath` and
+handing it to `explorer.exe`. That needs nothing installed.
+
+`wslview`, from [wslu](https://github.com/wslutilities/wslu)
+(`sudo apt install wslu`), is used in preference when it is there. What it
+adds is small and mostly not about mdnav:
+
+- it launches through PowerShell's `Start-Process` rather than
+  `explorer.exe`, which reports failure even when it worked;
+- it registers itself as the system handler for `http`, `https` and
+  `file`, so *other* terminal programs open things in Windows too;
+- it says so plainly when WSL interoperability is switched off.
+
+What it does not fix is Office refusing to open a document stored inside
+the WSL filesystem. Windows sees those as a network location
+(`\\wsl$\...`), and Protected View blocks them -- which looks like a
+prompt appearing and nothing happening after it. `wslview` builds the same
+kind of path, so it behaves the same. Either trust that location in
+Word's Trust Center, or keep such files under `/mnt/c`, where they get a
+real `C:` path and open without argument.
 
 Registering the `mdnav://` scheme uses whatever the platform provides, and only
 during `install.sh`: `reg.exe` and `wscript` on WSL, `xdg-mime` and

@@ -617,6 +617,15 @@ open_desktop() {
             wslview "$target" >/dev/null 2>&1 &
             return 0
         fi
+        case "$target" in
+            [a-zA-Z][a-zA-Z0-9+.-]*://*|mailto:*)
+                # An address is not a path, and converting one produces a
+                # filename that means nothing. Handed over as it stands.
+                if command -v explorer.exe >/dev/null 2>&1; then
+                    explorer.exe "$target" >/dev/null 2>&1 &
+                    return 0
+                fi ;;
+        esac
         if command -v wslpath >/dev/null 2>&1 && command -v explorer.exe >/dev/null 2>&1; then
             win="$(wslpath -w "$target" 2>/dev/null)" || win=""
             if [ -n "$win" ]; then
