@@ -90,15 +90,42 @@ cd mdnav
 ./install.sh
 ```
 
-Then read this page with it:
+## Try it
 
 ```
 mdnav README.md
 ```
 
-It links to itself in a dozen places, so clicking one is the quickest way
-to see whether following works on your terminal, and it carries an image,
-which is the other half of what can go wrong.
+Then click these, which between them are everything a link can be:
+
+- [another document](docs/developing.md) — opens in this pane, `p` comes back
+- [the `lib` directory](lib) — no README in it, so you get a listing to walk
+- [a source file](lib/mdnav_kind.py) — shown here, highlighted, with its own
+  line numbers
+- [a picture](docs/click-round-trip.png) — drawn here, and scrollable
+- [the project on GitHub][repo] — a reference-style link, handed to a browser
+- [Limitations](#limitations) — a place in this page
+
+[repo]: https://github.com/Ginger-Beard/mdnav
+
+If all six do what they say, everything works on your terminal. If one
+does not, `MDNAV_DEBUG=/tmp/mdnav.log` will say why.
+
+And this should be a diagram rather than a code block — it is drawn by
+mdcat, sliced into strips, and scrolled through like anything else:
+
+```mermaid
+flowchart LR
+  file["a Markdown file"] --> rewrite["mdnav rewrites its links"]
+  rewrite --> mdcat["mdcat renders it"]
+  mdcat --> slice["images cut into strips"]
+  slice --> screen["the pager draws it"]
+  screen -->|you click a link| decide{"what is it?"}
+  decide -->|Markdown, a directory| file
+  decide -->|text| show["shown here, highlighted"]
+  decide -->|a picture| file
+  decide -->|a document, media, the web| desktop["your desktop opens it"]
+```
 
 ### What it needs
 
@@ -220,9 +247,12 @@ clicking. Nothing needs installing at all for that; `./bin/mdnav` runs as-is.
   `Dockerfile` -- which is shown here, highlighted, with the file's own
   line numbers down the side. `MDNAV_LINE_NUMBERS=0` leaves them off, which
   is what to do when the point is to copy the text back out.
-- **A picture, a document or a media file** -- a PNG, a PDF, a spreadsheet
-  -- which is handed to whatever opens such things on your system. So is a
-  web address.
+- **A picture**, which is drawn here, scrolled in strips like any other
+  image. Where the terminal cannot draw at all it goes out to whatever
+  shows pictures, since a picture nobody can see is no use.
+- **A document or a media file** -- a PDF, a spreadsheet, a video -- which
+  is handed to whatever opens such things on your system. So is a web
+  address, and so is an SVG, being a picture nothing here can draw.
 - **Anything else is refused**, and the bar says so.
 
 That last one is deliberate. Opening a file and running it are the same

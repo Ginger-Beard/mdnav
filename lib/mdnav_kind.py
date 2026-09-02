@@ -5,6 +5,7 @@ Prints one word:
 
     markdown   render it as a document
     text       show it here, highlighted, with line numbers
+    image      draw it here, if the terminal can draw images
     desktop    hand it to whatever opens such things
     refuse     do neither
 
@@ -40,7 +41,8 @@ MARKDOWN = {".md", ".markdown", ".mkd", ".mdown", ".mkdn", ".mdwn"}
 
 # What a file says it is in its first bytes. Only things that are looked
 # at rather than run: no archive, no installer, no program.
-MAGIC = [
+# Pictures a renderer can draw in the terminal.
+PICTURES = [
     (b"\x89PNG\r\n\x1a\n", "png"),
     (b"\xff\xd8\xff", "jpeg"),
     (b"GIF87a", "gif"),
@@ -48,6 +50,10 @@ MAGIC = [
     (b"BM", "bmp"),
     (b"II*\x00", "tiff"),
     (b"MM\x00*", "tiff"),
+]
+
+# Everything else that is looked at rather than run.
+MEDIA = [
     (b"\x00\x00\x01\x00", "ico"),
     (b"%PDF-", "pdf"),
     (b"OggS", "ogg"),
@@ -65,18 +71,23 @@ SNIFF = 8192
 
 
 def magic_kind(head, path):
-    """What the bytes say this is, or None."""
-    for signature, name in MAGIC:
+    """Whether the bytes say this is a picture, other media, or neither."""
+    for signature, _ in PICTURES:
         if head.startswith(signature):
-            return name
+            return "image"
+    if head[:4] == b"RIFF" and head[8:12] == b"WEBP":
+        return "image"
+    for signature, _ in MEDIA:
+        if head.startswith(signature):
+            return "desktop"
     # RIFF containers name themselves four bytes in.
-    if head[:4] == b"RIFF" and head[8:12] in (b"WEBP", b"WAVE", b"AVI "):
-        return head[8:12].decode("ascii").strip().lower()
+    if head[:4] == b"RIFF" and head[8:12] in (b"WAVE", b"AVI "):
+        return "desktop"
     # ISO base media -- mp4, m4a, mov -- says so at offset four.
     if head[4:8] == b"ftyp":
-        return "mp4"
+        return "desktop"
     if head[:4] == b"PK\x03\x04":
-        return zip_kind(path)
+        return "desktop" if zip_kind(path) else None
     return None
 
 
@@ -138,8 +149,11 @@ def kind(path):
         return "refuse"
     # Asked before the file is read as text, because a picture may well be
     # text -- an SVG is XML -- and is still a picture.
-    if magic_kind(head, path):
-        return "desktop"
+    found = magic_kind(head, path)
+    if found:
+        return found
+    # An SVG is XML, so it would read as text; it is a picture, but not one
+    # a terminal renderer draws, so it goes out to the desktop.
     if head.lstrip()[:4] == b"<svg" or b"<svg" in head[:512]:
         return "desktop"
     if looks_like_text(head):

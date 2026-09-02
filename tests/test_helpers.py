@@ -142,6 +142,16 @@ check("only the real link is registered", [r["label"] for r in registered], ["re
 check("the code span is untouched", "`[z](other.md)`" in text, True)
 check("the fence is untouched", "[q](other.md)" in text, True)
 
+# A label often holds a code span of its own, and the link is still a link:
+# skipping by where a match begins, not by whether it touches code.
+text, registered = rewritten(
+    "- [the `lib` folder](other.md)\n- [`code only`](other.md)\n"
+    "- inline `[z](other.md)` stays literal\n")
+check("a label may contain code", [r["label"] for r in registered],
+      ["the `lib` folder", "`code only`"])
+check("a link inside a code span is still left alone",
+      "`[z](other.md)`" in text, True)
+
 # Reference-style links are resolved against their definition.
 text, registered = rewritten("[text][ref]\n\n[ref]: other.md\n")
 check("reference-style link resolves", [r["label"] for r in registered], ["text"])
@@ -180,10 +190,12 @@ with tempfile.TemporaryDirectory() as tmp:
         return path
 
     png = b"\x89PNG\r\n\x1a\n" + b"\x00" * 40
-    check("a picture is handed over", kind.kind(make("a.png", png)), "desktop")
-    check("even with no extension", kind.kind(make("nameless", png)), "desktop")
+    check("a picture is shown here", kind.kind(make("a.png", png)), "image")
+    check("even with no extension", kind.kind(make("nameless", png)), "image")
     check("a picture calling itself a document is still a picture",
-          kind.kind(make("lying.pdf", png)), "desktop")
+          kind.kind(make("lying.pdf", png)), "image")
+    check("a document goes to the desktop",
+          kind.kind(make("real.pdf", b"%PDF-1.4\n" + b"\x00" * 20)), "desktop")
     # The one that matters: a program renamed to look harmless.
     check("a program calling itself a document is refused",
           kind.kind(make("evil.pdf", b"\x7fELF\x02\x01\x01" + b"\x00" * 40)),
@@ -208,6 +220,11 @@ with tempfile.TemporaryDirectory() as tmp:
           kind.kind(os.path.join(tmp, "plain-folder")), "markdown")
 
 
+    check("an SVG goes out, being a picture nothing here draws",
+          kind.kind(make("d.svg", b'<svg xmlns="http://www.w3.org/2000/svg"/>')),
+          "desktop")
+
+
 # --- showing a file as a page ----------------------------------------
 group("files shown as pages")
 with tempfile.TemporaryDirectory() as tmp:
@@ -217,6 +234,14 @@ with tempfile.TemporaryDirectory() as tmp:
     check("it is fenced as what it is", "```python" in page, True)
     check("it carries no numbers of its own", "  1  import os" in page, False)
     check("the name is the heading", page.startswith("# sample.py"), True)
+
+    # A picture is a page too, so it can be looked at here rather than
+    # handed to something else.
+    picture = rewrite.as_image_page("/tmp/holiday snap.png")
+    check("a picture is a document holding one image",
+          "![holiday snap.png](<a" in picture.replace("/tmp/", "a"), True)
+    check("and its name is the heading",
+          picture.startswith("# holiday snap.png"), True)
 
     # The numbers go on after rendering, and have to land on the file's own
     # lines -- including one far too long for the window, which the terminal

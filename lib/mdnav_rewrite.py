@@ -176,7 +176,7 @@ def expand_refstyle(text):
             return m.group(0)
         return "{}[{}]({})".format(bang, label, target)
 
-    return outside_code(text, lambda chunk, at: REFLINK_RE.sub(fix, chunk))
+    return sub_outside_code(REFLINK_RE, fix, text)
 
 
 LIST_ITEM_RE = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s")
@@ -293,28 +293,27 @@ def set_mermaid_font(text):
     return MERMAID_RE.sub(fix, text)
 
 
-def outside_code(text, transform):
-    """Rewrite everything except code, and say where each piece began.
+def sub_outside_code(pattern, replace, text):
+    """Substitute everywhere except where the match begins inside code.
 
     A link inside a fence or a code span is a link being shown, not a link
-    being offered: the document is talking about the markup. Rewritten, it
-    is registered as somewhere to go, drawn with a target the author never
-    typed, and -- in a table cell -- risks having a real link fastened onto
-    literal text.
+    being offered: the document is talking about the markup.
 
-    `transform(chunk, offset)` gets each non-code piece and its position in
-    the whole, so a rewrite can still tell where in the document it is.
+    Where it *begins* is the test, not where it lies. A label often holds a
+    code span of its own -- [the `lib` directory](lib) is ordinary writing
+    -- and cutting the text up at every span would split such a link in
+    half and leave it unrecognised, which is what used to happen.
     """
-    out = []
-    at = 0
-    for start, end in code_ranges(text):
-        if start > at:
-            out.append(transform(text[at:start], at))
-        out.append(text[start:end])
-        at = end
-    if at < len(text):
-        out.append(transform(text[at:], at))
-    return "".join(out)
+    spans = code_ranges(text)
+
+    def guarded(match):
+        at = match.start()
+        for start, end in spans:
+            if start <= at < end:
+                return match.group(0)
+        return replace(match)
+
+    return pattern.sub(guarded, text)
 
 
 def tidy_html(text):
@@ -393,7 +392,7 @@ def bracket_spaced(text, *bases):
                 return "{}<{}>{})".format(head, candidate, title)
         note("target {!r}: has a space and names nothing", inner)
         return m.group(0)
-    return outside_code(text, lambda chunk, at: SPACED_RE.sub(fix, chunk))
+    return sub_outside_code(SPACED_RE, fix, text)
 
 
 # The delimiter row that makes the line above it a table header, and so
@@ -509,6 +508,26 @@ def as_code_page(path):
 
     return "# {}\n\n{}{}\n{}\n{}\n".format(
         os.path.basename(path), fence, language, "\n".join(lines), fence)
+
+
+def file_kind(path):
+    """What a file is, asked of the one place that decides."""
+    try:
+        import mdnav_kind
+        return mdnav_kind.kind(path)
+    except Exception:
+        return "text"
+
+
+def as_image_page(path):
+    """A picture, shown as a page.
+
+    Written as a document holding one image, so the renderer draws it and
+    the pager scrolls it in strips like any other -- which is the whole
+    reason a picture can be looked at here rather than handed away.
+    """
+    return "# {}\n\n![{}]({})\n".format(
+        os.path.basename(path), os.path.basename(path), as_dest(path))
 
 
 def directory_listing(path):
@@ -762,6 +781,8 @@ def main():
         if os.path.splitext(srcfile)[1].lower() in (
                 ".md", ".markdown", ".mkd", ".mdown", ".mkdn", ".mdwn"):
             text = open(src, encoding="utf-8").read()
+        elif file_kind(srcfile) == "image":
+            text = as_image_page(srcfile)
         else:
             # Not a document: shown as what it is, rather than handed to
             # something that might do more than show it.
@@ -900,13 +921,11 @@ def main():
     text = REF_RE.sub(lambda m: "[{}]({})".format(m.group(1), m.group(1)), text)
     text = expand_refstyle(text)
     text = bracket_spaced(text, srcdir)
-    text = outside_code(text, lambda chunk, at: IMAGE_RE.sub(fix_image, chunk))
+    text = sub_outside_code(IMAGE_RE, fix_image, text)
     # Worked out on the text the links are about to be read from, so the
     # offsets are the ones fix_link will be given.
     table_ranges[:] = table_spans(text)
-    text = outside_code(
-        text,
-        lambda chunk, at: LINK_RE.sub(lambda m: fix_link(m, at + m.start()), chunk))
+    text = sub_outside_code(LINK_RE, lambda m: fix_link(m, m.start()), text)
     # A bare <url> is not written as a link and never reaches fix_link, but
     # in a table it is dropped like any other, so it is recorded too.
     if scheme:

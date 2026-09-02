@@ -791,6 +791,13 @@ goto() {
     # what is not recognised is how clicking a link runs a program.
     case "$(python3 "$LIB/mdnav_kind.py" "$target" 2>/dev/null)" in
         markdown|text) ;;
+        image)
+            # Drawn here when the terminal can draw at all; handed over
+            # when it cannot, since a picture nobody can see is no use.
+            if [ -z "$IMAGE_PROTOCOL" ] || [ "$IMAGE_PROTOCOL" = none ]; then
+                open_desktop "$target"
+                return 1
+            fi ;;
         desktop)
             open_desktop "$target"
             return 1 ;;
