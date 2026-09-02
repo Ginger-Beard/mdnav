@@ -322,9 +322,96 @@ term_size() {
     return 0
 }
 
+# Documents already rendered this session. Stepping back into one is the
+# commonest move there is, and rendering it again costs what rendering it
+# cost the first time -- which on a long document is most of the wait. The
+# key carries when the file last changed and how wide it was drawn, so an
+# edit or a resize misses and the work is redone.
+RENDER_CACHE_MAX=6
+declare -a RENDER_KEYS=()
+
+render_slot() {   # key -> prints the slot holding it, or fails
+    local i=0
+    while [ "$i" -lt "${#RENDER_KEYS[@]}" ]; do
+        if [ "${RENDER_KEYS[$i]}" = "$1" ]; then
+            printf '%s' "$i"
+            return 0
+        fi
+        i=$(( i + 1 ))
+    done
+    return 1
+}
+
+render_keep() {   # remember what was just rendered, under key $1
+    local slot="${#RENDER_KEYS[@]}" j=1
+    if [ "$slot" -ge "$RENDER_CACHE_MAX" ]; then
+        # The oldest goes, and the rest shuffle down a place.
+        rm -rf "$work/cache/0"
+        while [ "$j" -lt "${#RENDER_KEYS[@]}" ]; do
+            mv -f "$work/cache/$j" "$work/cache/$(( j - 1 ))" 2>/dev/null
+            RENDER_KEYS[$(( j - 1 ))]="${RENDER_KEYS[$j]}"
+            j=$(( j + 1 ))
+        done
+        slot=$(( ${#RENDER_KEYS[@]} - 1 ))
+        unset "RENDER_KEYS[$slot]"
+    fi
+    mkdir -p "$work/cache/$slot" || return 0
+    cp -f "$work/buffer.ansi" "$work/links.json" "$work/links.json.anchors" \
+          "$work/links.json.tables" "$work/spans.txt" "$work/links.txt" \
+          "$work/cache/$slot/" 2>/dev/null || :
+    RENDER_KEYS[$slot]="$1"
+}
+
 load_buffer() {
-    rewrite
     term_size
+    local key slot
+    key="$current|$(file_mtime)|$cols|$cell_h|$SCHEME"
+    if slot="$(render_slot "$key")"; then
+        cp -f "$work/cache/$slot/"* "$work/" 2>/dev/null || :
+        [ -n "${MDNAV_DEBUG:-}" ] && \
+            printf 'mdnav: %s: rendered already, reused\n' "${current##*/}" >&4
+    else
+        render_document
+        render_keep "$key"
+        [ -n "${MDNAV_DEBUG:-}" ] && \
+            printf 'mdnav: %s: rendered\n' "${current##*/}" >&4
+    fi
+    : 
+
+    load_lines "$work/buffer.ansi"
+    SPAN=()
+    [ "$CHOP" = 0 ] && read_into SPAN "$work/spans.txt"
+
+    local junk
+    while IFS= read -rsn1 -t 0.05 junk; do :; done
+
+    # Where each link sits on screen, so a mouse position can be turned
+    # back into the link under it. Worked out once, not per movement.
+    LINKMAP=()
+    local lidx lstart lend luri
+    while IFS=$'\t' read -r lidx lstart lend luri; do
+        [ -n "$lidx" ] || continue
+        LINKMAP[$lidx]="${LINKMAP[$lidx]:-}${lstart}:${lend}:${luri}"$'\x1f'
+    done < "$work/links.txt"
+
+    LINK_COUNT="$(link_count)"
+    LAST_MTIME="$(file_mtime)"
+    top=0
+    recalc
+    # The place the link named, now that the document naming it is loaded.
+    if [ -n "$PENDING_ANCHOR" ]; then
+        goto_anchor "$PENDING_ANCHOR" || :
+        PENDING_ANCHOR=""
+    fi
+    # A search outlives the document it was typed in, as it does in less.
+    [ -n "$SEARCH_PAT" ] && apply_search
+    return 0
+}
+
+# Everything that turns the file on disk into the buffer on screen. Split
+# out so that a document already rendered can skip the whole of it.
+render_document() {
+    rewrite
 
     local args=(--ansi --columns "$cols")
     [ -n "$IMAGE_PROTOCOL" ] && args+=(--image-protocol "$IMAGE_PROTOCOL")
@@ -350,24 +437,16 @@ load_buffer() {
             "$(command -v convert >/dev/null 2>&1 && echo found || echo missing)" >&4
     fi
 
-    load_lines "$work/buffer.ansi"
-
     # Long lines are left whole for the terminal to wrap, so that selecting
     # one copies it back unbroken -- the difference between code you can
     # paste and code you cannot. The cost is that a line is no longer a
     # row, so how many rows each takes has to be known.
-    SPAN=()
     if [ "$CHOP" = 0 ]; then
-        local sp i=0
-        while IFS= read -r sp; do
-            SPAN[$i]="$sp"
-            i=$(( i + 1 ))
-        done < <(python3 "$LIB/mdnav_spans.py" "$work/buffer.ansi" "$cols" \
-                     "$cell_h" 2>/dev/null)
+        python3 "$LIB/mdnav_spans.py" "$work/buffer.ansi" "$cols" "$cell_h" \
+            > "$work/spans.txt" 2>/dev/null || : > "$work/spans.txt"
+    else
+        : > "$work/spans.txt"
     fi
-
-    local junk
-    while IFS= read -rsn1 -t 0.05 junk; do :; done
 
     # mdcat keeps a link's style inside a table cell and drops its
     # destination, so a table is the one place a link stops being one.
@@ -377,35 +456,28 @@ load_buffer() {
     python3 "$LIB/mdnav_tablelinks.py" "$work/buffer.ansi" "$work/links.json" \
         2>/dev/null || :
 
-    # Where each link sits on screen, so a mouse position can be turned
-    # back into the link under it. Worked out once, not per movement.
-    LINKMAP=()
-    local lidx lstart lend luri
-    while IFS=$'\t' read -r lidx lstart lend luri; do
-        [ -n "$lidx" ] || continue
-        LINKMAP[$lidx]="${LINKMAP[$lidx]:-}${lstart}:${lend}:${luri}"$'\x1f'
-    done < <(python3 "$LIB/mdnav_links.py" "$work/buffer.ansi" 2>/dev/null)
-
-    LINK_COUNT="$(link_count)"
-    LAST_MTIME="$(file_mtime)"
-    top=0
-    recalc
-    # The place the link named, now that the document naming it is loaded.
-    if [ -n "$PENDING_ANCHOR" ]; then
-        goto_anchor "$PENDING_ANCHOR" || :
-        PENDING_ANCHOR=""
-    fi
-    # A search outlives the document it was typed in, as it does in less.
-    [ -n "$SEARCH_PAT" ] && apply_search
-    return 0
+    python3 "$LIB/mdnav_links.py" "$work/buffer.ansi" > "$work/links.txt" \
+        2>/dev/null || : > "$work/links.txt"
 }
 
+# mapfile reads a file into an array in one go, where a loop pays the cost
+# of the shell per line -- six times the difference on a long document.
+# It arrived in bash 4, and macOS still ships 3.2, so the loop stays as the
+# way for anything older.
+if [ "${BASH_VERSINFO[0]:-0}" -ge 4 ]; then
+    read_into() { mapfile -t "$1" < "$2"; }
+else
+    read_into() {
+        local __name="$1" __line
+        eval "$__name=()"
+        while IFS= read -r __line; do
+            eval "$__name+=(\"\$__line\")"
+        done < "$2"
+    }
+fi
+
 load_lines() {
-    BUF=()
-    local line
-    while IFS= read -r line; do
-        BUF+=("$line")
-    done < "$1"
+    read_into BUF "$1"
     recalc
 }
 
