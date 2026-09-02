@@ -23,7 +23,7 @@ up/down, k/j           scroll a line
 wheel                  scroll 3 lines (MDNAV_WHEEL_LINES)
 space/PgDn, b/u/PgUp   scroll a page
 g / G                  top / bottom
-click                  follow a link (ctrl+click hands it to the desktop)
+click                  follow a link; non-Markdown opens in your desktop app
 / ?                    search forward, backward
 n / N                  next match, previous
 esc                    clear the search
@@ -266,7 +266,7 @@ here and has never been run. Reports very welcome.
 
 | | clicking | images | tested |
 |---|---|---|---|
-| WSL2 + Windows Terminal | yes, with a confirmation dialog | yes, sixel | **yes** |
+| WSL2 + Windows Terminal | yes | yes, sixel | **yes** |
 | macOS + Ghostty | yes | not yet tried | **yes**, in daily use |
 | Linux, OSC 8 terminal (kitty, WezTerm, foot…) | should work, via XDG | should work | no |
 | Terminal without OSC 8 | no — use `l` to pick links by number | unchanged | no |
@@ -283,12 +283,12 @@ exercised.
 
 macOS ships bash 3.2, which mdnav works around, so no Homebrew bash is needed.
 
-**On WSL**, clicks are handled by Windows rather than Linux, so the scheme is
-registered under `HKCU` and dispatched back through `wsl.exe`. Windows Terminal
-shows a *"This link may lead to an unsafe location"* confirmation for any
-non-web scheme, and offers no setting to suppress it — so following a link
-there costs an extra click. It is the price of the only mechanism that survives
-the round trip.
+**On WSL**, the `mdnav://` scheme is registered under `HKCU` and dispatched
+back through `wsl.exe`. Windows Terminal shows a *"This link may lead to an
+unsafe location"* confirmation before opening any non-web scheme, and offers
+no setting to suppress it — but that only applies to the long way round.
+A plain click is answered by mdnav without the terminal being involved, so
+no dialog appears, whether the link opens here or in a Windows application.
 
 ## Environment
 
@@ -361,24 +361,31 @@ alternate scroll for any that do not.
 
 ### Clicking
 
-The terminal has to tell a *running program* that you clicked something, and
-terminals have no way to do that. So mdnav borrows the one channel that does
-cross that gap: a URL scheme.
+![What happens when you click a link](docs/click-round-trip.png)
 
-![How a click reaches a running mdnav](docs/click-round-trip.png)
+Almost every click is answered by mdnav itself. It is told where the mouse
+is and knows where each of its links sits, so it decides what to do without
+asking anyone: Markdown and directories open in the same pane, and anything
+else — a PDF, a spreadsheet, an image, a web page — is handed straight to
+whatever opens such things on your system. That is a plain click, and it is
+all you need day to day.
+
+The rest of this section is about the long way round, which you are unlikely
+to meet.
+
+A terminal has no way to tell a *running program* that you clicked something.
+So for the cases where mdnav is not the one being asked — ctrl+click, or a
+click on a link still sitting in scrollback after mdnav has exited — it
+borrows the one channel that does cross that gap: a URL scheme.
 
 1. Before rendering, mdnav rewrites local links in a temp copy of the document
    from `./OTHER.md` to `mdnav://<instance>/abs/path/OTHER.md`.
 2. mdcat renders that copy and emits each link as an OSC 8 hyperlink — the
    terminal owns the hit-testing from there.
-3. Clicking hands `mdnav://…` to the desktop, which routes it to `mdnav-open`.
+3. Activating one hands `mdnav://…` to the desktop, which routes it to
+   `mdnav-open`.
 4. `mdnav-open` writes the path into a FIFO the running mdnav is reading, and
    mdnav renders it in place.
-
-A plain click never leaves the terminal: mdnav is told where the mouse is and
-knows where its links are, so it follows the link itself. The round trip above
-is what happens when the desktop is asked instead — ctrl+click, or a click on a
-link in scrollback after mdnav has exited.
 
 Each instance has its own FIFO and names itself in the links it renders --
 `mdnav://<instance>/<path>` -- so with several open at once, a click goes back
