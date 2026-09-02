@@ -34,6 +34,10 @@ Ng                     go to line N (as 50g)
 Resting the pointer on a link shows where it goes, in place of the usual
 status line.
 
+The hints on that line are also buttons: clicking `p back`, `l list` or
+`q quit` does what pressing the key does. `p back` only appears, and only
+answers, when there is somewhere to go back to.
+
 It re-renders on its own when the file changes on disk, so it can be left open
 beside an editor; your place in the document is kept. `MDNAV_WATCH=0` turns
 that off.

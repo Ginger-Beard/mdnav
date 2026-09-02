@@ -160,6 +160,8 @@ declare -a SPAN=()
 declare -a ROWLINE=()
 declare -a LINKMAP=()
 HOVER_URI=""
+# Where each hint sits on the bar, as "first:last:what".
+declare -a BAR_HITS=()
 declare -a MATCH_LINE=()
 declare -a MATCH_OCC=()
 top=0
@@ -972,6 +974,45 @@ hover_text() {
 # document it has not left does not need reloading.
 FOLLOW_KIND=""
 
+# Show the links and ask which one. Reached by the l key and by pointing
+# at the same word on the bar, which had better do the same thing.
+ask_for_link() {
+    local listing prompt_row num target
+    printf '\e[H\e[2J'
+    listing="$(list_links)"
+    printf '%s\n' "$listing"
+    # Asked for just under the list, rather than at the foot of a mostly
+    # empty screen.
+    prompt_row=$(( $(printf '%s\n' "$listing" | wc -l) + 2 ))
+    [ "$prompt_row" -gt "$rows" ] && prompt_row="$rows"
+    # Read here rather than in the terminal: with the mouse reporting,
+    # every movement would otherwise be typed into the prompt as an escape
+    # sequence.
+    read_pattern "follow link #: " "$prompt_row" || PATTERN=""
+    num="$PATTERN"
+    if [ -n "${num//[!0-9]/}" ]; then
+        target="$(link_path "$num")"
+        case "$target" in
+            "#"*) goto_anchor "$target" || : ;;
+            *)    goto "$target" && load_buffer ;;
+        esac
+    fi
+}
+
+# What a click on the bar was pointing at, if anything.
+bar_click() {   # <column> -> prints the action
+    local col="$1" hit first last
+    for hit in ${BAR_HITS[@]+"${BAR_HITS[@]}"}; do
+        first="${hit%%:*}"
+        last="${hit#*:}"; last="${last%%:*}"
+        if [ "$col" -ge "$first" ] && [ "$col" -le "$last" ]; then
+            printf '%s' "${hit##*:}"
+            return 0
+        fi
+    done
+    return 1
+}
+
 follow_click() {
     local row="$1" col="$2" uri rest
     FOLLOW_KIND=""
@@ -1026,9 +1067,21 @@ status() {
     elif [ -n "$SEARCH_PAT" ]; then
         left="$left  /${SEARCH_PAT} (${#MATCH_LINE[@]})"
     fi
+    # The hints are also targets: where each one sits is recorded as it is
+    # built, so a click on the bar can be answered by the thing the reader
+    # was pointing at. Offsets first, since the bar is right-aligned and
+    # where it starts is not known until it is finished.
+    local -a hit_at=() hit_do=()
     right="click a link"
-    [ ${#stack[@]} -gt 0 ] && right="$right · p back"
-    right="$right · l list · q quit "
+    if [ ${#stack[@]} -gt 0 ]; then
+        hit_at+=("$(( ${#right} + 3 )):6"); hit_do+=("back")
+        right="$right · p back"
+    fi
+    hit_at+=("$(( ${#right} + 3 )):6"); hit_do+=("list")
+    right="$right · l list"
+    hit_at+=("$(( ${#right} + 3 )):6"); hit_do+=("quit")
+    right="$right · q quit"
+    right="$right "
 
     if [ -n "$HOVER_URI" ]; then
         # The target gets the bar to itself. It is routinely longer than
@@ -1050,6 +1103,18 @@ status() {
     fi
 
     pad=$(( cols - ${#left} - ${#right} ))
+    # Turned into columns now that the width of the bar is settled. Only
+    # when the hints are actually drawn: the narrow form and the hover form
+    # do not show them, and nothing invisible should be clickable.
+    BAR_HITS=()
+    if [ -n "$right" ] && [ "$pad" -ge 1 ]; then
+        local base=$(( cols - ${#right} + 1 )) k=0 at len
+        while [ "$k" -lt "${#hit_at[@]}" ]; do
+            at="${hit_at[$k]%:*}"; len="${hit_at[$k]#*:}"
+            BAR_HITS+=("$(( base + at )):$(( base + at + len - 1 )):${hit_do[$k]}")
+            k=$(( k + 1 ))
+        done
+    fi
     printf '\e[%d;1H\e[0m\e[K' "$rows"
     if [ "$pad" -lt 1 ] && [ -n "$right" ]; then
         printf '\e[0m\e[7m%-*.*s\e[0m' "$cols" "$cols" " $right"
@@ -1228,6 +1293,23 @@ while :; do
         pgup|char:u|char:b)
             if page_back; then ANCHOR_LINE=-1; draw_all; status; fi ;;
         click)
+            # The bar is a row like any other to the terminal, and the
+            # hints on it say what the keys do, so pointing at one and
+            # pressing is the same request as pressing the key.
+            if [ "$MOUSE_ROW" = "$rows" ] && hint="$(bar_click "$MOUSE_COL")"; then
+                case "$hint" in
+                    back)
+                        if [ ${#stack[@]} -gt 0 ]; then
+                            last=$(( ${#stack[@]} - 1 ))
+                            current="${stack[$last]}"; unset "stack[$last]"
+                            HOVER_URI=""
+                            load_buffer; draw_all; status
+                        fi ;;
+                    list) ask_for_link; draw_all; status ;;
+                    quit) break ;;
+                esac
+                continue
+            fi
             if follow_click "$MOUSE_ROW" "$MOUSE_COL"; then
                 case "$FOLLOW_KIND" in
                     anchor) draw_all; status ;;     # a place in this document
@@ -1296,25 +1378,7 @@ while :; do
                 load_buffer; draw_all; status
             fi ;;
         char:l|char:L)
-            printf '\e[H\e[2J'
-            listing="$(list_links)"
-            printf '%s\n' "$listing"
-            # Asked for just under the list, rather than at the foot of a
-            # mostly empty screen.
-            prompt_row=$(( $(printf '%s\n' "$listing" | wc -l) + 2 ))
-            [ "$prompt_row" -gt "$rows" ] && prompt_row="$rows"
-            # Read here rather than in the terminal: with the mouse
-            # reporting, every movement would otherwise be typed into the
-            # prompt as an escape sequence.
-            read_pattern "follow link #: " "$prompt_row" || PATTERN=""
-            num="$PATTERN"
-            if [ -n "${num//[!0-9]/}" ]; then
-                target="$(link_path "$num")"
-                case "$target" in
-                    "#"*) goto_anchor "$target" || : ;;
-                    *)    goto "$target" && load_buffer ;;
-                esac
-            fi
+            ask_for_link
             draw_all; status ;;
         "char::")
             # In less, : is a prefix: the command runs on the next key, with
