@@ -439,17 +439,16 @@ Things that look like they should work, and don't:
 
 ## Upstream
 
-Four things mdnav has run into in what it builds on. Two are fixes waiting
-on review; two it works around, and will stop working around by itself
-once they are fixed, because each workaround only acts when the problem is
-actually present.
+Four things mdnav has run into in what it builds on. Two of them it works
+around, and will stop working around by itself once they are fixed,
+because each workaround only acts when the problem is actually present.
 
 | Where | What | Status |
 |---|---|---|
 | [mdcat#39](https://github.com/BIRSAx2/mdcat/pull/39) | A quoted list loses the `│` on its lines after the first | fix open |
 | [mdcat#40](https://github.com/BIRSAx2/mdcat/pull/40) | A quoted code block loses the `│` on its lines | fix open |
-| mdcat / merman | A link in a table cell keeps its style and loses its destination, so it is drawn as a link and is not one | reported; worked around |
-| merman | Mermaid labels are not drawn at all, because the font family is matched case-sensitively and Mermaid asks in lower case | reported; worked around |
+| mdcat | A link in a table cell keeps its style and loses its destination, so it is drawn as a link and is not one | fix written; worked around meanwhile |
+| [merman#113](https://github.com/Latias94/merman/issues/113) | Mermaid labels are not drawn at all: the font family is matched case-sensitively, and Mermaid asks for its own in lower case | reported; worked around |
 
 **Links in table cells.** mdnav knows the destination -- it wrote it -- so
 after rendering it compares what it asked for against what came out and
@@ -459,8 +458,11 @@ a version that carries them itself leaves this with nothing to do.
 
 **Mermaid labels.** mdnav names a font in the copy it renders, asking the
 system what its `sans-serif` actually is so the capitals are right. A
-diagram that names its own font is left alone. See
-[Mermaid diagrams](#mermaid-diagrams).
+diagram that names its own font is left alone. Installing the fonts
+Mermaid asks for does not help, because the names were never missing --
+only spelled in a case that does not match. See
+[Mermaid diagrams](#mermaid-diagrams) and
+[merman#113](https://github.com/Latias94/merman/issues/113).
 
 ## Licence
 
