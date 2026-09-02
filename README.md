@@ -527,7 +527,7 @@ Things that look like they should work, and don't:
 
 ## Upstream
 
-Four things mdnav has run into in what it builds on. Two of them it works
+Five things mdnav has run into in what it builds on. Two of them it works
 around, and will stop working around by itself once they are fixed,
 because each workaround only acts when the problem is actually present.
 
@@ -537,6 +537,7 @@ because each workaround only acts when the problem is actually present.
 | [mdcat#40](https://github.com/BIRSAx2/mdcat/pull/40) | A quoted code block loses the `│` on its lines | fix open |
 | mdcat | A link in a table cell keeps its style and loses its destination, so it is drawn as a link and is not one | fix written; worked around meanwhile |
 | [merman#113](https://github.com/Latias94/merman/issues/113) | Mermaid labels are not drawn at all: the font family is matched case-sensitively, and Mermaid asks for its own in lower case | reported; worked around |
+| [merman#117](https://github.com/Latias94/merman/issues/117) | A label on an arrow is drawn outside the diagram and clipped at its edge | reported; diagrams here keep their words in boxes |
 
 **Links in table cells.** mdnav knows the destination -- it wrote it -- so
 after rendering it compares what it asked for against what came out and
