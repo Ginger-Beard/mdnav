@@ -160,6 +160,10 @@ declare -a SPAN=()
 declare -a ROWLINE=()
 declare -a LINKMAP=()
 HOVER_URI=""
+# Which screen row of the link list holds which link, so a line of it can
+# be clicked. Empty where the list is longer than the screen, since what
+# scrolls off takes the mapping with it.
+declare -a LIST_ROWS=()
 # Something to tell the reader, shown on the bar until the next thing
 # happens. Used where an action declines, since a click that does nothing
 # and says nothing is indistinguishable from one that missed.
@@ -258,11 +262,14 @@ for link in links:
     label = " ".join(link["label"].split())
     target = link["path"]
     if target.startswith("#"):
+        # Marked as a place in this page, because the heading it names is
+        # very often the words of the link itself, and two identical
+        # columns say nothing about which is which.
         slug, _, item = target[1:].partition("|")
         where = anchors.get(slug, slug)
         if item:
             where += ", item " + item
-        rows.append((label, where))
+        rows.append((label, "\u00a7 " + where))
         continue
     # Relative to the document being read: the absolute path is the same
     # long prefix on every line and says nothing.
@@ -274,6 +281,8 @@ for link in links:
         where = os.path.relpath(target, here)
     except ValueError:
         where = target
+    if os.path.isdir(target):
+        where = where.rstrip("/") + "/"
     # When the label is already the file, one column says everything.
     if label.lstrip("./") == where:
         rows.append((where, ""))
@@ -629,8 +638,14 @@ read_key_wait() {
 # The prompt is edited here rather than by the terminal, because less's
 # behaviour is not the terminal's: escape abandons the search, and so does
 # rubbing out the last character of it. Returns 1 when abandoned.
+# `kind` is "digits" where the answer is a number -- the link list -- and
+# anything else where it is text. At a number prompt a letter is not a
+# character to collect: p and q are the keys they always are, and the rest
+# are typing mistakes, which are better ignored than gathered up into a
+# number that was never going to be one.
 read_pattern() {
-    local prompt="$1" row="${2:-$rows}" buf="" c seq esc
+    local prompt="$1" row="${2:-$rows}" kind="${3:-text}" buf="" c seq esc
+    local click_col click_row
     PROMPT_ACTION=""
     PATTERN=""
     printf '\e[?25h'
@@ -660,9 +675,17 @@ read_pattern() {
                     # button that is drawn should answer.
                     case "$esc" in
                         "[<0;"*m)
+                            # "[<0;COL;ROWm": the release of a plain click.
                             seq="${esc#\[<0;}"
-                            PROMPT_ACTION="$(bar_click_at "${seq%%;*}" \
-                                "$(seq="${seq#*;}"; printf '%s' "${seq%m}")")"
+                            click_col="${seq%%;*}"
+                            seq="${seq#*;}"
+                            click_row="${seq%m}"
+                            PROMPT_ACTION="$(bar_click_at "$click_col" "$click_row")"
+                            if [ -z "$PROMPT_ACTION" ] && \
+                               [ -n "${LIST_ROWS[$click_row]:-}" ]; then
+                                # A line of the list is the link it names.
+                                PROMPT_ACTION="pick:${LIST_ROWS[$click_row]}"
+                            fi
                             if [ -n "$PROMPT_ACTION" ]; then
                                 printf '\e[?25l'; return 1
                             fi ;;
@@ -679,7 +702,16 @@ read_pattern() {
             $'\x17')           # ctrl-w: back one word
                 buf="${buf% *}" ;;
             *)
-                buf="$buf$c" ;;
+                if [ "$kind" = digits ]; then
+                    case "$c" in
+                        [0-9]) buf="$buf$c" ;;
+                        p|P)   PROMPT_ACTION="back"; printf '\e[?25l'; return 1 ;;
+                        q|Q)   PROMPT_ACTION="quit"; printf '\e[?25l'; return 1 ;;
+                        *)     : ;;
+                    esac
+                else
+                    buf="$buf$c"
+                fi ;;
         esac
     done
 }
@@ -1027,6 +1059,7 @@ list_bar() {
     local base k at len
     local -a hit_at=() hit_do=()
     left=" ${current##*/}  ${LINK_COUNT} link(s)  a number to follow, esc to cancel"
+    [ ${#stack[@]} -gt 0 ] && left="$left, p back"
     right=""
     if [ ${#stack[@]} -gt 0 ]; then
         hit_at+=("$(( ${#right} + 1 )):8"); hit_do+=("back")
@@ -1065,11 +1098,32 @@ ask_for_link() {
     prompt_row=$(( $(printf '%s\n' "$listing" | wc -l) + 2 ))
     # One row clear at the foot, for the bar.
     [ "$prompt_row" -gt $(( rows - 1 )) ] && prompt_row=$(( rows - 1 ))
+
+    # Where each numbered line landed, so clicking one follows it. Only
+    # when the whole list is on screen: past that it has scrolled, and a
+    # row no longer says which line is on it.
+    LIST_ROWS=()
+    local at=0 text head
+    if [ "$(printf '%s\n' "$listing" | wc -l)" -le $(( rows - 1 )) ]; then
+        while IFS= read -r text; do
+            at=$(( at + 1 ))
+            case "$text" in
+                *")"*)
+                    head="${text%%\)*}"
+                    head="${head##* }"
+                    case "$head" in
+                        ''|*[!0-9]*) : ;;
+                        *) LIST_ROWS[$at]="$head" ;;
+                    esac ;;
+            esac
+        done <<< "$listing"
+    fi
+
     list_bar
     # Read here rather than in the terminal: with the mouse reporting,
     # every movement would otherwise be typed into the prompt as an escape
     # sequence.
-    read_pattern "follow link #: " "$prompt_row" || PATTERN=""
+    read_pattern "follow link #: " "$prompt_row" digits || PATTERN=""
     case "$PROMPT_ACTION" in
         back)
             if [ ${#stack[@]} -gt 0 ]; then
@@ -1087,6 +1141,9 @@ ask_for_link() {
             PROMPT_ACTION=""
             ask_for_link
             return 0 ;;
+        pick:*)
+            PATTERN="${PROMPT_ACTION#pick:}"
+            PROMPT_ACTION="" ;;
     esac
     num="$PATTERN"
     if [ -n "${num//[!0-9]/}" ]; then
