@@ -630,7 +630,8 @@ read_key_wait() {
 # behaviour is not the terminal's: escape abandons the search, and so does
 # rubbing out the last character of it. Returns 1 when abandoned.
 read_pattern() {
-    local prompt="$1" row="${2:-$rows}" buf="" c seq
+    local prompt="$1" row="${2:-$rows}" buf="" c seq esc
+    PROMPT_ACTION=""
     PATTERN=""
     printf '\e[?25h'
     while :; do
@@ -647,11 +648,25 @@ read_pattern() {
                 # wheel events, arrow keys. Those get swallowed, not typed
                 # into the pattern and not mistaken for the key.
                 if IFS= read -rsn1 -t 0.02 seq; then
+                    esc="$seq"
                     if [ "$seq" = "[" ] || [ "$seq" = "O" ]; then
                         while IFS= read -rsn1 -t 0.02 seq; do
+                            esc="$esc$seq"
                             case "$seq" in [A-Za-z~]) break ;; esac
                         done
                     fi
+                    # A click on the bar is worth reading rather than
+                    # throwing away: the buttons are drawn here too, and a
+                    # button that is drawn should answer.
+                    case "$esc" in
+                        "[<0;"*m)
+                            seq="${esc#\[<0;}"
+                            PROMPT_ACTION="$(bar_click_at "${seq%%;*}" \
+                                "$(seq="${seq#*;}"; printf '%s' "${seq%m}")")"
+                            if [ -n "$PROMPT_ACTION" ]; then
+                                printf '\e[?25l'; return 1
+                            fi ;;
+                    esac
                     continue
                 fi
                 printf '\e[?25l'; return 1 ;;
@@ -1002,6 +1017,42 @@ hover_text() {
 # document it has not left does not need reloading.
 FOLLOW_KIND=""
 
+# The bar on the list page. It names what can be typed there rather than
+# what can be typed in a document, and nothing on it is a button: the
+# prompt reads keys directly and never sees a mouse report, so a button
+# would be a promise it could not keep.
+list_bar() {
+    local left right pad
+    BAR_HITS=()
+    local base k at len
+    local -a hit_at=() hit_do=()
+    left=" ${current##*/}  ${LINK_COUNT} link(s)  a number to follow, esc to cancel"
+    right=""
+    if [ ${#stack[@]} -gt 0 ]; then
+        hit_at+=("$(( ${#right} + 1 )):8"); hit_do+=("back")
+        right="$right [p back]"
+    fi
+    hit_at+=("$(( ${#right} + 1 )):8"); hit_do+=("quit")
+    right="$right [q quit]"
+    right="$right "
+    pad=$(( cols - ${#left} - ${#right} ))
+    if [ "$pad" -ge 1 ]; then
+        base=$(( cols - ${#right} + 1 )); k=0
+        while [ "$k" -lt "${#hit_at[@]}" ]; do
+            at="${hit_at[$k]%:*}"; len="${hit_at[$k]#*:}"
+            BAR_HITS+=("$(( base + at )):$(( base + at + len - 1 )):${hit_do[$k]}")
+            k=$(( k + 1 ))
+        done
+    fi
+    printf '\e[%d;1H\e[0m\e[K' "$rows"
+    if [ "$pad" -lt 1 ]; then
+        printf '\e[0m\e[7m%-*.*s\e[0m' "$cols" "$cols" " $left"
+    else
+        printf '\e[0m\e[7m%s%*s%s\e[0m' "$left" "$pad" "" "$right"
+    fi
+    end_frame
+}
+
 # Show the links and ask which one. Reached by the l key and by pointing
 # at the same word on the bar, which had better do the same thing.
 ask_for_link() {
@@ -1012,11 +1063,31 @@ ask_for_link() {
     # Asked for just under the list, rather than at the foot of a mostly
     # empty screen.
     prompt_row=$(( $(printf '%s\n' "$listing" | wc -l) + 2 ))
-    [ "$prompt_row" -gt "$rows" ] && prompt_row="$rows"
+    # One row clear at the foot, for the bar.
+    [ "$prompt_row" -gt $(( rows - 1 )) ] && prompt_row=$(( rows - 1 ))
+    list_bar
     # Read here rather than in the terminal: with the mouse reporting,
     # every movement would otherwise be typed into the prompt as an escape
     # sequence.
     read_pattern "follow link #: " "$prompt_row" || PATTERN=""
+    case "$PROMPT_ACTION" in
+        back)
+            if [ ${#stack[@]} -gt 0 ]; then
+                local last=$(( ${#stack[@]} - 1 ))
+                current="${stack[$last]}"; unset "stack[$last]"
+                HOVER_URI=""
+                load_buffer
+            fi
+            PROMPT_ACTION=""
+            return 0 ;;
+        quit)
+            # The trap puts the terminal back.
+            exit 0 ;;
+        list)
+            PROMPT_ACTION=""
+            ask_for_link
+            return 0 ;;
+    esac
     num="$PATTERN"
     if [ -n "${num//[!0-9]/}" ]; then
         target="$(link_path "$num")"
@@ -1025,6 +1096,14 @@ ask_for_link() {
             *)    goto "$target" && load_buffer ;;
         esac
     fi
+}
+
+# What a click on the bar was pointing at, if anything -- given a column
+# and a row, so it can be asked from inside a prompt as well as from the
+# main loop.
+bar_click_at() {   # <column> <row>
+    [ "$2" = "$rows" ] || return 1
+    bar_click "$1"
 }
 
 # What a click on the bar was pointing at, if anything.

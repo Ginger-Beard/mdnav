@@ -41,6 +41,9 @@ The bracketed hints on that line are buttons: clicking `[p back]`,
 `[l list]` or `[q quit]` does what pressing the key does. `[p back]` only
 appears, and only answers, when there is somewhere to go back to.
 
+The link list has a bar of its own, saying what can be typed there -- a
+number, or escape to come back -- and carrying the same buttons.
+
 It re-renders on its own when the file changes on disk, so it can be left open
 beside an editor; your place in the document is kept. `MDNAV_WATCH=0` turns
 that off.
