@@ -8,11 +8,14 @@ another local file: activating one hands it to your desktop, which opens it in
 some other application, in some other window.
 
 mdnav keeps you where you are. It is a pager — opens at the top of the
-document, scrolls both ways, images and all — and a click on a link to another
-Markdown file renders that file in the same pane, with a back stack.
+document, scrolls both ways, images and all — and a click on a link renders
+what it points at in the same pane, with a back stack. Links to other files,
+to a section of one, and to whole directories all work, so a documentation
+tree can be read by walking it.
 
 ```
 mdnav README.md
+mdnav ~/notes            # a directory opens as its README, or as a listing
 ```
 
 ```
@@ -94,13 +97,13 @@ cd mdnav
 | `mdcat` | does the rendering; see above |
 | `python3` | rewriting links, slicing images, searching. Standard library only |
 | bash 3.2+ | so stock macOS bash is enough |
-| `stty`, `tput` | terminal size and raw input; coreutils and ncurses |
+| `stty` | terminal size and raw input; from coreutils |
 | ImageMagick (`convert`) | **strongly wanted**: without it images are not sliced, and a tall one jumps into view rather than scrolling. See [Images are sliced](#images-are-sliced) |
 | `xdg-open` (Linux), `open` (macOS) | only for links to files that are not Markdown, which are handed to the desktop |
 | `wslview` (WSL, optional) | from [wslu](https://github.com/wslutilities/wslu). Not needed -- see [Opening things on WSL](#opening-things-on-wsl) |
 
-Most of that is already on a working system; `python3`, `stty` and `tput`
-effectively always are. ImageMagick usually is not:
+Most of that is already on a working system; `python3` and `stty` effectively
+always are. ImageMagick usually is not:
 
 ```
 sudo apt install imagemagick          # Debian, Ubuntu, WSL
@@ -184,62 +187,67 @@ To skip registration entirely:
 mdnav still works — you follow links with `l` and a number rather than by
 clicking. Nothing needs installing at all for that; `./bin/mdnav` runs as-is.
 
-## How it works
+## What a link can point at
 
-### Clicking
+- **Another Markdown file**, which opens in the same pane. `p` goes back.
+- **A place in this document** (`[see](#section)`), which scrolls there and
+  marks the heading it landed on until you scroll, since near the end of a
+  file the view cannot put it at the top. A numbered citation
+  (`[[21]](#references)`, which is how Markdown documents cite, having no
+  anchor per item) lands on item 21 rather than on the heading, falling
+  back to the heading if there is no such item. Anchors are matched to
+  headings the way GitHub and mdBook spell them.
+- **A place in another document** (`[see](other.md#section)`), which opens
+  that file and lands on the section. If the file exists but the section
+  does not, it opens at the top.
+- **A directory**, which opens the page inside it -- `README.md` or
+  `index.md` -- the way every documentation tree reads one: `docs/setup/`
+  is the setup section and its README is the front page. A directory with
+  no such page is written out as one: a listing of what it holds, each
+  entry a link, so a tree can be walked down into and `p` walks back out.
+  A directory works as an argument too: `mdnav ~/notes`.
+- **Anything else** -- a PDF, a spreadsheet, a web address -- which is
+  handed to whatever opens such things on your system.
 
-The terminal has to tell a *running program* that you clicked something, and
-terminals have no way to do that. So mdnav borrows the one channel that does
-cross that gap: a URL scheme.
+A local link that resolves to nothing is shown as plain text rather than as
+a link, since a link that cannot go anywhere is worse than none. Run with
+`MDNAV_DEBUG` set to be told which, and why.
 
-1. Before rendering, mdnav rewrites local links in a temp copy of the document
-   from `./OTHER.md` to `mdnav://<instance>/abs/path/OTHER.md`.
-2. mdcat renders that copy and emits each link as an OSC 8 hyperlink — the
-   terminal owns the hit-testing from there.
-3. Clicking hands `mdnav://…` to the desktop, which routes it to `mdnav-open`.
-4. `mdnav-open` writes the path into a FIFO the running mdnav is reading, and
-   mdnav renders it in place.
+Links written for a site's built output are followed to the source they came
+from: `dir/index.html` to that directory's `README.md`, `foo.html` to
+`foo.md`. Reference-style links (`[a][b]`) are resolved against their
+definition. Links inside code -- a fence, an indented block, a code span --
+are left alone, because the document is showing you the markup rather than
+offering it.
 
-A plain click never leaves the terminal: mdnav is told where the mouse is and
-knows where its links are, so it follows the link itself. The round trip above
-is what happens when the desktop is asked instead — ctrl+click, or a click on a
-link in scrollback after mdnav has exited.
+Raw HTML is tidied, since Markdown permits it and a terminal renderer prints
+it verbatim: `<img>` becomes a Markdown image and is drawn, `<a href>` a
+followable link, and tags like `<details>` and `<span>` are dropped while
+their text is kept. An `<img>` with an empty `alt` is dropped rather than
+drawn, that being how a document says an image is decoration -- badges
+either side of a link, usually, which drawn would bury the link between
+them. Code blocks are left exactly as written; `MDNAV_HTML=raw` turns all
+of this off.
 
-Each instance has its own FIFO and names itself in the links it renders --
-`mdnav://<instance>/<path>` -- so with several open at once, a click goes back
-to the window it was clicked in rather than to whichever started last.
+mdBook directives are handled, since raw sources are read without the
+preprocessor that would expand them: `{{#ref}} path {{#endref}}` is followed
+as a link, and `{{#include path}}` is inlined, line ranges included. A
+missing include is left visible rather than dropped, and an included file's
+own relative links keep pointing where they meant to.
 
-If that instance has since quit, any other live mdnav takes it; if none is
-running, `mdnav-open` opens the file the ordinary way. A click never silently
-does nothing.
+## Limitations
 
-### Images are sliced
-
-Being a pager at all depends on this. A sixel image is a single escape sequence
-the terminal rasterises whole, routinely tens of rows tall, and nothing above
-the terminal can say how tall it came out or draw part of it. A pager cannot
-lay out what it cannot measure — which is also why piping mdcat to `less`
-fails: less counts a 79-row image as one line and draws the rest over the text.
-
-So mdnav cuts each image into strips exactly one text row tall, one sixel
-escape each. It does this to mdcat's *output* rather than its input, which
-also catches Mermaid diagrams and rendered maths -- mdcat draws those as
-images although nothing in the Markdown says so. Every line in the buffer is then exactly one
-screen row: layout is arithmetic again, and a half-scrolled image is simply the
-strips that fall inside the window.
-
-This needs ImageMagick (`convert`) and a sixel terminal. Without either, images
-are left whole for mdcat to draw — everything still works, but a tall image
-jumps into view rather than scrolling.
-
-Strips are cached under `~/.cache/mdnav`, keyed by the image, its modification
-time, and the width it was rendered for. Slicing a tall image takes about a
-second; afterwards it is immediate.
-
-Every movement repaints rather than scrolling the terminal's scrolling region.
-The region would be cheaper, but terminals move the text cells and leave the
-sixel pixels behind, which tears images into stripes. A repaint of a screenful
-of strips measures around 15ms.
+- A bare `[name]` with its definition elsewhere is not followed. It cannot
+  be told from ordinary brackets, and `[[21]]` is a citation rather than a
+  target.
+- A link in a table cell whose text the table had to wrap across two lines
+  is left plain. It is still reachable from `l`.
+- `-c` renders through mdcat directly, so table-cell links are not restored
+  there. See [Upstream](#upstream).
+- A tall image scrolls rather than fitting: slicing scales an image to the
+  window width but not its height.
+- Only WSL2 has actually been tested. See
+  [Platform support](#platform-support).
 
 ## Platform support
 
@@ -250,7 +258,8 @@ here, and has never been run. Reports very welcome.
 | | clicking | images | tested |
 |---|---|---|---|
 | WSL2 + Windows Terminal | yes, with a confirmation dialog | yes, sixel | **yes** |
-| Linux, OSC 8 terminal (kitty, WezTerm, foot, Ghostty…) | should work, via XDG | should work | no |
+| Linux, OSC 8 terminal (kitty, WezTerm, foot…) | should work, via XDG | should work | no |
+| Ghostty | should work, via XDG | should work, kitty protocol | partly — run there, sized correctly; images unconfirmed |
 | macOS (iTerm2, kitty, WezTerm, Ghostty) | should work, via Launch Services | should work | no |
 | Terminal without OSC 8 | no — use `l` to pick links by number | unchanged | no |
 
@@ -284,7 +293,7 @@ the round trip.
 | `MDNAV_WHEEL_LINES` | lines per wheel notch (default 3); `-1` for a screen |
 | `MDNAV_MOUSE` | `0` to leave the wheel to the terminal |
 | `MDNAV_KEY_POLL` | key poll interval, in seconds |
-| `MDNAV_DEBUG` | write an execution trace to this file, and a line for every link dropped |
+| `MDNAV_DEBUG` | write a trace to this file: every link dropped and why, whether images were left whole, and whether a document was rendered or reused |
 
 mdcat's own image detection reports `ansi` on Windows Terminal even where sixel
 works, and then renders without images, silently. mdnav probes for itself and
@@ -335,6 +344,65 @@ says, so the preference is lost on the way through. Terminals still handle
 ctrl+click on hyperlinks while reporting is on; `MDNAV_MOUSE=0` falls back to
 alternate scroll for any that do not.
 
+## How it works
+
+### Clicking
+
+The terminal has to tell a *running program* that you clicked something, and
+terminals have no way to do that. So mdnav borrows the one channel that does
+cross that gap: a URL scheme.
+
+1. Before rendering, mdnav rewrites local links in a temp copy of the document
+   from `./OTHER.md` to `mdnav://<instance>/abs/path/OTHER.md`.
+2. mdcat renders that copy and emits each link as an OSC 8 hyperlink — the
+   terminal owns the hit-testing from there.
+3. Clicking hands `mdnav://…` to the desktop, which routes it to `mdnav-open`.
+4. `mdnav-open` writes the path into a FIFO the running mdnav is reading, and
+   mdnav renders it in place.
+
+A plain click never leaves the terminal: mdnav is told where the mouse is and
+knows where its links are, so it follows the link itself. The round trip above
+is what happens when the desktop is asked instead — ctrl+click, or a click on a
+link in scrollback after mdnav has exited.
+
+Each instance has its own FIFO and names itself in the links it renders --
+`mdnav://<instance>/<path>` -- so with several open at once, a click goes back
+to the window it was clicked in rather than to whichever started last.
+
+If that instance has since quit, any other live mdnav takes it; if none is
+running, `mdnav-open` opens the file the ordinary way. A click never silently
+does nothing.
+
+### Images are sliced
+
+Being a pager at all depends on this. A sixel image is a single escape sequence
+the terminal rasterises whole, routinely tens of rows tall, and nothing above
+the terminal can say how tall it came out or draw part of it. A pager cannot
+lay out what it cannot measure — which is also why piping mdcat to `less`
+fails: less counts a 79-row image as one line and draws the rest over the text.
+
+So mdnav cuts each image into strips exactly one text row tall, one sixel
+escape each. It does this to mdcat's *output* rather than its input, which
+also catches Mermaid diagrams and rendered maths -- mdcat draws those as
+images although nothing in the Markdown says so. Every line in the buffer is then exactly one
+screen row: layout is arithmetic again, and a half-scrolled image is simply the
+strips that fall inside the window.
+
+This needs ImageMagick (`convert`) and a sixel terminal. Without either, images
+are left whole for mdcat to draw — everything still works, but a tall image
+jumps into view rather than scrolling.
+
+Strips are cached under `~/.cache/mdnav`, keyed by the image's own content and
+the height of a terminal cell -- so an edited image simply gets a different key
+rather than a stale answer. Slicing a diagram takes about a sixth of a second
+the first time and a fraction of that afterwards. The cache is safe to delete;
+it refills itself.
+
+Every movement repaints rather than scrolling the terminal's scrolling region.
+The region would be cheaper, but terminals move the text cells and leave the
+sixel pixels behind, which tears images into stripes. A repaint of a screenful
+of strips measures around 15ms.
+
 ## Related
 
 **mdcat symlinked as `mdless`.** mdcat paginates through `less` when invoked
@@ -373,70 +441,6 @@ Things that look like they should work, and don't:
   the viewport: `CSI T` inserts blank lines and discards the bottom of the
   buffer rather than restoring anything from scrollback.
 
-## Limitations
-
-- Reference-style links (`[a][b]`) are resolved against their definition
-  and followed like any other. The shortcut form -- a bare `[name]` with a
-  definition elsewhere -- is not, since it cannot be told from ordinary
-  brackets, and `[[21]]` is a citation rather than a target.
-- Links inside code are left alone: a fence, an indented block, or a code
-  span is showing you the markup, not offering it. Four spaces after a
-  list item mean the item continues rather than code, and where that is
-  genuinely ambiguous the text wins, so a link in a deeply nested list
-  keeps working.
-- A link to a directory opens the page inside it -- `README.md` or
-  `index.md` -- the way every documentation tree reads one: `docs/setup/`
-  is the setup section and its README is the front page. A directory with
-  no such page is written out as one: a listing of what it holds, each
-  entry a link, so a directory of directories can be walked down into and
-  `p` walks back out. The entries are ordinary links, so what happens when
-  one is followed is decided by the usual rule -- Markdown and directories
-  open here, anything else goes to the desktop, which is what makes a
-  folder of spreadsheets or images useful rather than a dead end. A
-  directory works as an argument too: `mdnav ~/notes`.
-- Links in table cells are put back after rendering. mdcat keeps a link's
-  style inside a cell and drops its destination, so a table is the one
-  place a link stops being one; mdnav knows what it wrote, so it compares
-  that against what came out and re-attaches the difference. Only inside a
-  table, only where the text is found, and only for links that went
-  missing, in the table it was written in -- so a future mdcat that
-  carries them itself changes nothing here. A label the table had to wrap
-  across lines is left alone rather than guessed at; it is still reachable
-  from `l`. Not done in `-c`, which hands rendering straight to mdcat.
-- A link to a place in the same document (`[see](#section)`) scrolls there,
-  and the heading it lands on is marked until you scroll — near the end of a
-  file the view cannot put it at the top, so it is worth being told where to
-  start reading. A numbered citation (`[[21]](#references)`, which is how
-  Markdown documents cite, having no anchor per item) lands on item 21 in that
-  section rather than on the heading, falling back to the heading if there is
-  no such item.
-  Anchors are matched to headings the way GitHub and mdBook spell them; a
-  link naming a heading that does not exist is left as plain text rather
-  than as a link that cannot go anywhere.
-- A link to a place in *another* document (`[see](other.md#section)`) opens
-  that file and lands on the section, marked the same way. If the file
-  exists but the section does not, it opens at the top.
-- Raw HTML is tidied, since Markdown permits it and a terminal renderer prints
-  it verbatim: `<img>` becomes a Markdown image and is drawn, `<a href>` a
-  followable link, and tags like `<details>` and `<span>` are dropped while
-  their text is kept. An `<img>` with an empty `alt` is dropped rather than
-  drawn, that being how a document says an image is decoration — badges either
-  side of a link, usually, which drawn would bury the link between them. Code blocks are left exactly as written. `MDNAV_HTML=raw`
-  turns this off.
-- Links written for a site's built output are followed to the source they
-  came from: `dir/index.html` to that directory's `README.md`, `foo.html` to
-  `foo.md`, a bare directory to the page inside it. A local link that resolves
-  to nothing is shown as text rather than as a link, since a link that cannot
-  go anywhere is worse than none.
-- mdBook directives are handled, since raw sources are read without the
-  preprocessor that would expand them: `{{#ref}} path {{#endref}}` is followed
-  as a link, and `{{#include path}}` is inlined, line ranges included. A
-  missing include is left visible rather than dropped, and an included file's
-  own relative links keep pointing where they meant to.
-- Links to non-Markdown files are handed to the desktop rather than rendered.
-- Slicing scales an image to the window width but not its height, so a tall
-  image is still taller than the screen — it scrolls rather than fitting.
-
 ## Upstream
 
 Four things mdnav has run into in what it builds on. Two of them it works
@@ -463,22 +467,6 @@ Mermaid asks for does not help, because the names were never missing --
 only spelled in a case that does not match. See
 [Mermaid diagrams](#mermaid-diagrams) and
 [merman#113](https://github.com/Latias94/merman/issues/113).
-
-## Tests
-
-    python3 tests/test_helpers.py        # fast, needs nothing
-    bash tests/test_pager.sh             # drives the pager, needs mdcat
-
-The first covers the Python that does the thinking: resolving a link,
-naming an anchor, measuring a line, finding a table in rendered output.
-It needs nothing but Python and runs in about a second.
-
-The second drives the pager itself through a pseudo-terminal, clicking
-links and buttons and reading the status bar back. It needs an `mdcat` to
-render with, and skips rather than fails where there is none.
-
-Every case in both is one that was got wrong at some point. Both run on
-every push, alongside `shellcheck`.
 
 ## Licence
 
