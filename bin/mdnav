@@ -11,7 +11,7 @@
 # half-scrolled image is simply the strips that fall inside it.
 set -uo pipefail
 
-VERSION=1.0.0
+VERSION=0.9.0
 MDCAT="${MDCAT_BIN:-mdcat}"
 SCHEME="${MDNAV_SCHEME:-mdnav}"
 # One FIFO per instance, named in the links it renders, so several mdnavs

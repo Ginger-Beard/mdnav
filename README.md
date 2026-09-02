@@ -126,15 +126,16 @@ flowchart TB
   file["a Markdown file"] --> render["mdnav rewrites its links,<br/>mdcat renders it,<br/>images are cut into strips"]
   render --> screen["the pager draws it"]
   screen --> decide{"you click a link"}
-  decide -->|"Markdown, a directory,<br/>text, a picture"| file
-  decide -->|"a document, media,<br/>a web address"| desktop["your desktop opens it"]
-  decide -->|"anything else"| refuse["refused, and it says so"]
+  decide --> shown["Markdown, a directory, text<br/>or a picture: shown here"]
+  decide --> desktop["a document, media or a web<br/>address: your desktop opens it"]
+  decide --> refuse["anything else: refused,<br/>and the bar says so"]
+  shown --> file
 ```
 
 ### What it needs
 
-| | |
-|---|---|
+| Package | Description |
+| --- | --- |
 | `mdcat` | does the rendering; see above |
 | `python3` | rewriting links, slicing images, searching. Standard library only |
 | bash 3.2+ | so stock macOS bash is enough |
@@ -318,7 +319,7 @@ own relative links keep pointing where they meant to.
 Two setups are in real use. The rest is written from the specs and reasoning
 here and has never been run. Reports very welcome.
 
-| | clicking | images | tested |
+| term | clicking | images | tested |
 |---|---|---|---|
 | WSL2 + Windows Terminal | yes | yes, sixel | **yes** |
 | macOS + Ghostty | yes | no | **yes** |
@@ -346,8 +347,8 @@ no dialog appears, whether the link opens here or in a Windows application.
 
 ## Environment
 
-| | |
-|---|---|
+| Var | Description |
+| --- | --- |
 | `MDCAT_BIN` | mdcat to run, if not the one on `PATH` |
 | `MDNAV_IMAGE_PROTOCOL` | force `sixel`, `kitty`, `iterm2`, or `none` |
 | `MDNAV_SLICE` | `0` to leave images whole rather than cutting them into strips |
