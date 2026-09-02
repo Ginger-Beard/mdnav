@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # Chunking pre-rendered mdcat output for more(1)-style paging.
 #
 # Deliberately no screen ownership: nothing is redrawn, and the alternate
@@ -15,8 +16,7 @@
 # mdcat queries the terminal itself when rendering images, and those replies
 # arrive on our stdin, where they would otherwise be read as keystrokes.
 mdnav_drain_input() {
-    local junk
-    while IFS= read -rsn1 -t 0.05 junk; do :; done
+    while IFS= read -rsn1 -t 0.05 _; do :; done
 }
 
 # mdnav_print_chunk <rows-available>

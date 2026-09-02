@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # Shared image-protocol detection. Sourced by bin/mdnav and install.sh.
 #
 # mdcat's own auto-detection reports "ansi" for Windows Terminal even when

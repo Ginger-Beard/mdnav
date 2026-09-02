@@ -464,6 +464,22 @@ only spelled in a case that does not match. See
 [Mermaid diagrams](#mermaid-diagrams) and
 [merman#113](https://github.com/Latias94/merman/issues/113).
 
+## Tests
+
+    python3 tests/test_helpers.py        # fast, needs nothing
+    bash tests/test_pager.sh             # drives the pager, needs mdcat
+
+The first covers the Python that does the thinking: resolving a link,
+naming an anchor, measuring a line, finding a table in rendered output.
+It needs nothing but Python and runs in about a second.
+
+The second drives the pager itself through a pseudo-terminal, clicking
+links and buttons and reading the status bar back. It needs an `mdcat` to
+render with, and skips rather than fails where there is none.
+
+Every case in both is one that was got wrong at some point. Both run on
+every push, alongside `shellcheck`.
+
 ## Licence
 
 MIT — see [LICENSE](LICENSE).

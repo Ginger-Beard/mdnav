@@ -1,0 +1,62 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  # Everything that needs nothing: the Python that resolves links, names
+  # anchors and measures lines, plus a look over the shell. Seconds, so it
+  # runs on every push and is the one that gates a pull request.
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Python helpers
+        run: python3 tests/test_helpers.py
+
+      - name: Shell syntax
+        run: |
+          for f in bin/mdnav bin/mdnav-open install.sh uninstall.sh lib/*.sh tests/*.sh; do
+            [ -e "$f" ] || continue
+            bash -n "$f" || exit 1
+          done
+
+      - name: shellcheck
+        uses: ludeeus/action-shellcheck@master
+        with:
+          severity: warning
+          additional_files: mdnav mdnav-open
+
+      - name: Python syntax
+        run: python3 -m compileall -q lib tests
+
+  # The pager itself, driven through a pseudo-terminal. Needs an mdcat to
+  # render with, which has to be built, so it is kept apart from the
+  # checks above and its build is cached.
+  pager:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache the mdcat build
+        id: mdcat-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/mdcat
+          key: mdcat-${{ runner.os }}-2.15.0
+
+      - name: Build mdcat
+        if: steps.mdcat-cache.outputs.cache-hit != 'true'
+        run: cargo install mdcat --locked --version 2.15.0
+
+      - name: Drive the pager
+        run: bash tests/test_pager.sh

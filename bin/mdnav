@@ -167,7 +167,6 @@ declare -a MATCH_OCC=()
 top=0
 rows=24
 cols=80
-cell_w=10
 cell_h=20
 
 work="$(mktemp -d)"
@@ -213,10 +212,12 @@ query_cell_size() {
     stty "$saved" 2>/dev/null
     h="${reply##*\[6;}"; h="${h%%;*}"
     w="${reply##*;}"
+    # The width is in the reply too, and is not wanted: an image is cut by
+    # its height alone. It is still checked, because a reply that does not
+    # parse is not a reply worth believing the height of either.
     case "$h" in ''|*[!0-9]*) return ;; esac
     case "$w" in ''|*[!0-9]*) return ;; esac
     cell_h="$h"
-    cell_w="$w"
 }
 
 rewrite() {
@@ -384,8 +385,7 @@ load_buffer() {
     SPAN=()
     [ "$CHOP" = 0 ] && read_into SPAN "$work/spans.txt"
 
-    local junk
-    while IFS= read -rsn1 -t 0.05 junk; do :; done
+    while IFS= read -rsn1 -t 0.05 _; do :; done
 
     # Where each link sits on screen, so a mouse position can be turned
     # back into the link under it. Worked out once, not per movement.
@@ -1268,11 +1268,6 @@ while :; do
                 else delta=$(( delta - WHEEL_LINES )); fi
                 moved=1 ;;
 
-            motion)
-                before="$HOVER_URI"
-                hover_at "$MOUSE_ROW" "$MOUSE_COL" || :
-                [ "$HOVER_URI" != "$before" ] && status
-                : ;;
             *) break ;;
         esac
         KEY=""

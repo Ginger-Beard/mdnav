@@ -1,0 +1,48 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # A tag saying one thing and the program saying another is worse
+      # than no tag at all, since the version is what a bug report cites.
+      - name: The tag and the program must agree
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          in_source="$(sed -n 's/^VERSION=//p' bin/mdnav | head -1)"
+          if [ "$tag" != "$in_source" ]; then
+            echo "tag is $tag, bin/mdnav says $in_source" >&2
+            exit 1
+          fi
+          echo "both say $tag"
+
+      - name: Check it before shipping it
+        run: |
+          python3 tests/test_helpers.py
+          for f in bin/mdnav bin/mdnav-open install.sh uninstall.sh lib/*.sh; do
+            bash -n "$f"
+          done
+
+      - name: Build the tarball
+        run: |
+          name="mdnav-${GITHUB_REF_NAME}"
+          mkdir -p "dist/$name"
+          cp -r bin lib docs README.md LICENSE install.sh uninstall.sh "dist/$name/"
+          tar -czf "dist/$name.tar.gz" -C dist "$name"
+          ( cd dist && sha256sum "$name.tar.gz" > "$name.tar.gz.sha256" )
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/*.tar.gz
+            dist/*.tar.gz.sha256
+          generate_release_notes: true

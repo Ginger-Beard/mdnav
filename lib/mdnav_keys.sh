@@ -1,9 +1,14 @@
+# shellcheck shell=bash
 # Key and mouse decoding.
 #
 # Input is read a chunk at a time rather than a byte at a time. With motion
 # reporting on, the terminal sends an event for every pixel the mouse
 # moves, and a read per byte cannot keep pace with that -- the display ends
 # up behind the input, which reads as the whole thing being slow.
+#
+# KEY, MOUSE_BTN, MOUSE_COL and MOUSE_ROW are read by whatever sources
+# this, which is the point of setting them.
+# shellcheck disable=SC2034
 #
 # Sets KEY to a name. For mouse events it also sets MOUSE_BTN, MOUSE_COL
 # and MOUSE_ROW. Returns 1 when nothing is waiting.
