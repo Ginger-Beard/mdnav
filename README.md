@@ -90,6 +90,16 @@ cd mdnav
 ./install.sh
 ```
 
+Then read this page with it:
+
+```
+mdnav README.md
+```
+
+It links to itself in a dozen places, so clicking one is the quickest way
+to see whether following works on your terminal, and it carries an image,
+which is the other half of what can go wrong.
+
 ### What it needs
 
 | | |
@@ -251,17 +261,20 @@ own relative links keep pointing where they meant to.
 
 ## Platform support
 
-**Only WSL2 has actually been tested** — Ubuntu 24.04 under Windows Terminal
-1.24, with mdcat 2.15. Everything else is written from the specs and reasoning
-here, and has never been run. Reports very welcome.
+Two setups are in real use. The rest is written from the specs and reasoning
+here and has never been run. Reports very welcome.
 
 | | clicking | images | tested |
 |---|---|---|---|
 | WSL2 + Windows Terminal | yes, with a confirmation dialog | yes, sixel | **yes** |
+| macOS + Ghostty | yes | not yet tried | **yes**, in daily use |
 | Linux, OSC 8 terminal (kitty, WezTerm, foot…) | should work, via XDG | should work | no |
-| Ghostty | should work, via XDG | should work, kitty protocol | partly — run there, sized correctly; images unconfirmed |
-| macOS (iTerm2, kitty, WezTerm, Ghostty) | should work, via Launch Services | should work | no |
 | Terminal without OSC 8 | no — use `l` to pick links by number | unchanged | no |
+
+Images are only cut into strips for **sixel**. A terminal drawing them by
+the kitty protocol — Ghostty, kitty itself — gets whole images, which show
+correctly but jump into view rather than scrolling, as they do anywhere
+without ImageMagick.
 
 On **Linux** the scheme is claimed with an XDG `.desktop` entry; on **macOS** by
 building a small AppleScript app bundle in `~/Applications` and handing it to
@@ -351,6 +364,8 @@ alternate scroll for any that do not.
 The terminal has to tell a *running program* that you clicked something, and
 terminals have no way to do that. So mdnav borrows the one channel that does
 cross that gap: a URL scheme.
+
+![How a click reaches a running mdnav](docs/click-round-trip.png)
 
 1. Before rendering, mdnav rewrites local links in a temp copy of the document
    from `./OTHER.md` to `mdnav://<instance>/abs/path/OTHER.md`.
@@ -467,6 +482,11 @@ Mermaid asks for does not help, because the names were never missing --
 only spelled in a case that does not match. See
 [Mermaid diagrams](#mermaid-diagrams) and
 [merman#113](https://github.com/Latias94/merman/issues/113).
+
+## Working on it
+
+[docs/developing.md](docs/developing.md) — what is where, how to run the
+tests, how to drive the pager by hand, and what the trace can tell you.
 
 ## Licence
 
