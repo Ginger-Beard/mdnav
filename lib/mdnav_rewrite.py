@@ -279,7 +279,11 @@ def set_mermaid_font(text):
 
     def fix(m):
         body = m.group("body")
-        if "%%{init" in body:
+        # Only a diagram that names a font is left alone. One that carries a
+        # directive for something else -- a theme, most often -- still needs
+        # a font, and a second directive supplements the first rather than
+        # replacing it, so what the document asked for survives.
+        if "fontFamily" in body:
             return m.group(0)
         directive = ('%%{init: {"themeVariables": {"fontFamily": "'
                      + family + '"}}}%%\n')
