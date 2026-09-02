@@ -141,7 +141,6 @@ flowchart TB
 | `stty` | terminal size and raw input; from coreutils |
 | ImageMagick (`convert`) | **strongly wanted**: without it images are not sliced, and a tall one jumps into view rather than scrolling. See [Images are sliced](#images-are-sliced) |
 | `xdg-open` (Linux), `open` (macOS) | only for links to files that are not Markdown, which are handed to the desktop |
-| `wslview` (WSL, optional) | from [wslu](https://github.com/wslutilities/wslu). Not needed -- see [Opening things on WSL](#opening-things-on-wsl) |
 
 Most of that is already on a working system; `python3` and `stty` effectively
 always are. ImageMagick usually is not:
@@ -322,7 +321,7 @@ here and has never been run. Reports very welcome.
 | | clicking | images | tested |
 |---|---|---|---|
 | WSL2 + Windows Terminal | yes | yes, sixel | **yes** |
-| macOS + Ghostty | yes | not yet tried | **yes**, in daily use |
+| macOS + Ghostty | yes | no | **yes** |
 | Linux, OSC 8 terminal (kitty, WezTerm, foot…) | should work, via XDG | should work | no |
 | Terminal without OSC 8 | no — use `l` to pick links by number | unchanged | no |
 
