@@ -428,6 +428,44 @@ def table_spans(text):
     return spans
 
 
+def directory_listing(path):
+    """A directory written out as a page.
+
+    A directory has no page of its own unless it holds a README, so one is
+    written for it, in Markdown, because that is what everything here reads
+    already: the entries are ordinary links, and what happens when one is
+    followed is decided by the same rules as anywhere else -- a directory
+    or a Markdown file opens in the pager, and anything else is handed to
+    the desktop.
+    """
+    name = os.path.basename(path.rstrip(os.sep)) or path
+    try:
+        entries = os.listdir(path)
+    except OSError as error:
+        return "# {}\n\nCannot be read: {}\n".format(name, error)
+
+    def sort_key(entry):
+        return (not os.path.isdir(os.path.join(path, entry)), entry.lower())
+
+    lines = ["# {}".format(name), ""]
+    listed = 0
+    for entry in sorted(entries, key=sort_key):
+        # Hidden entries are hidden for a reason, and a listing of them is
+        # noise in front of the thing being looked for.
+        if entry.startswith("."):
+            continue
+        target = quote(entry)
+        if os.path.isdir(os.path.join(path, entry)):
+            lines.append("- [{}/]({}/)".format(entry, target))
+        else:
+            lines.append("- [{}]({})".format(entry, target))
+        listed += 1
+    if not listed:
+        lines.append("*(empty)*")
+    lines.append("")
+    return "\n".join(lines)
+
+
 def spellings(target):
     """The same target as the document wrote it, and as the filesystem
     spells it. An editor inserting a link percent-encodes the spaces in a
@@ -460,15 +498,18 @@ def resolve_one(target, bases):
             continue
         for variant in source_variants(target):
             candidate = os.path.realpath(os.path.join(base, variant))
+            if os.path.isdir(candidate):
+                # A directory stands for the page inside it, the way every
+                # documentation tree reads one: docs/setup/ is the setup
+                # section, and README is its front page. Where there is no
+                # such page the directory stands for itself and is listed.
+                for name in ("README.md", "index.md"):
+                    inner = os.path.join(candidate, name)
+                    if os.path.exists(inner):
+                        return inner
+                return candidate
             if os.path.exists(candidate):
                 return candidate
-        # A directory stands for the page inside it.
-        candidate = os.path.realpath(os.path.join(base, target))
-        if os.path.isdir(candidate):
-            for name in ("README.md", "index.md"):
-                inner = os.path.join(candidate, name)
-                if os.path.exists(inner):
-                    return inner
 
     tail = target
     while tail.startswith("./") or tail.startswith("../"):
@@ -560,8 +601,14 @@ def main():
     image_mode = sys.argv[5] if len(sys.argv) > 5 else "inline"
     out_images = sys.argv[6] if len(sys.argv) > 6 else None
     srcfile = os.path.realpath(src)
-    srcdir = os.path.dirname(srcfile)
-    text = open(src, encoding="utf-8").read()
+    if os.path.isdir(srcfile):
+        # A directory is its own directory: its entries are named relative
+        # to it, not to whatever holds it.
+        srcdir = srcfile
+        text = directory_listing(srcfile)
+    else:
+        srcdir = os.path.dirname(srcfile)
+        text = open(src, encoding="utf-8").read()
     links = []
     # Where each anchor points, by the text of the heading that defines it.
     anchors = {anchor_slug(m.group(2)): heading_text(m.group(2))

@@ -68,6 +68,23 @@ and shift is how terminals let you reach past that.
 EOF
 }
 
+# What a directory is a page of: the README inside it, where there is one.
+# The same rule the rewriter applies to a link, kept here as well for the
+# paths that do not come through it -- the command line, and a click
+# delivered by the opener.
+page_for() {
+    local target="$1" name
+    if [ -d "$target" ]; then
+        for name in README.md index.md README.markdown index.markdown; do
+            if [ -f "$target/$name" ]; then
+                printf '%s' "$target/$name"
+                return 0
+            fi
+        done
+    fi
+    printf '%s' "$target"
+}
+
 cat_mode=0
 # Long lines are wrapped, as less does; -S leaves them running off the edge.
 CHOP=0
@@ -90,7 +107,9 @@ while [ $# -gt 0 ]; do
 done
 
 [ -n "$file" ] || { usage >&2; exit 2; }
-[ -f "$file" ] || die "no such file: $file"
+# A directory is as good a starting point as a file: it opens as the page
+# inside it, or as a listing of what it holds.
+[ -f "$file" ] || [ -d "$file" ] || die "no such file: $file"
 command -v "$MDCAT" >/dev/null 2>&1 || die "mdcat not found (set MDCAT_BIN to override)"
 command -v python3 >/dev/null 2>&1 || die "python3 is required"
 for helper in mdnav_rewrite.py mdnav_detect.sh mdnav_keys.sh mdnav_slice.py \
@@ -117,6 +136,7 @@ if [ "${MDNAV_SLICE:-1}" != 0 ] && command -v convert >/dev/null 2>&1 \
 fi
 
 current="$(abspath "$file")"
+current="$(page_for "$current")"
 declare -a stack=()
 declare -a BUF=()
 declare -a HLBUF=()
@@ -630,18 +650,24 @@ goto() {
         *"#"*)
             frag="${target##*#}"
             target="${target%#*}"
-            if [ ! -f "$target" ] && [ -f "$1" ]; then
+            if [ ! -f "$target" ] && [ ! -d "$target" ] && [ -f "$1" ]; then
                 target="$1"
                 frag=""
             fi ;;
     esac
+    # A directory is a page here: the one inside it if it holds a README,
+    # and a listing of what it contains if it does not. Which of the two is
+    # settled while resolving the link, so by now it is the second.
+    if [ -d "$target" ]; then
+        stack+=("$current")
+        current="$(page_for "$target")"
+        PENDING_ANCHOR="$frag"
+        return 0
+    fi
     [ -f "$target" ] || return 1
     case "$target" in
         *.md|*.markdown|*.mkd) ;;
-        *)  if command -v wslview >/dev/null 2>&1; then wslview "$target"
-            elif command -v xdg-open >/dev/null 2>&1; then xdg-open "$target" >/dev/null 2>&1
-            elif command -v open >/dev/null 2>&1; then open "$target" >/dev/null 2>&1
-            fi
+        *)  open_desktop "$target"
             return 1 ;;
     esac
     stack+=("$current")

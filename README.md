@@ -354,6 +354,16 @@ Things that look like they should work, and don't:
   list item mean the item continues rather than code, and where that is
   genuinely ambiguous the text wins, so a link in a deeply nested list
   keeps working.
+- A link to a directory opens the page inside it -- `README.md` or
+  `index.md` -- the way every documentation tree reads one: `docs/setup/`
+  is the setup section and its README is the front page. A directory with
+  no such page is written out as one: a listing of what it holds, each
+  entry a link, so a directory of directories can be walked down into and
+  `p` walks back out. The entries are ordinary links, so what happens when
+  one is followed is decided by the usual rule -- Markdown and directories
+  open here, anything else goes to the desktop, which is what makes a
+  folder of spreadsheets or images useful rather than a dead end. A
+  directory works as an argument too: `mdnav ~/notes`.
 - Links in table cells are put back after rendering. mdcat keeps a link's
   style inside a cell and drops its destination, so a table is the one
   place a link stops being one; mdnav knows what it wrote, so it compares
