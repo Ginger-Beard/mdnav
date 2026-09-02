@@ -15,6 +15,7 @@ Images keep plain filesystem paths -- mdcat reads those off disk itself rather
 than handing them to the terminal.
 """
 
+import hashlib
 import json
 import os
 import re
@@ -519,7 +520,35 @@ def file_kind(path):
         return "text"
 
 
-def as_image_page(path):
+def shown_image(path, workdir):
+    """The picture to draw: the file itself, or a smaller copy of it.
+
+    A picture is narrowed to the window either way, but doing it here is
+    far cheaper than doing it afterwards. Left alone, the renderer encodes
+    every pixel of the original, and that encoding then has to be decoded,
+    scaled and encoded again to be cut into strips -- for a photograph,
+    seconds of it. Scaling first means the renderer is handed something
+    already the right size.
+    """
+    limit = int(os.environ.get("MDNAV_MAX_PX", "0") or 0)
+    if limit < 1 or not workdir:
+        return path
+    try:
+        wide = subprocess.run(["identify", "-format", "%w", path],
+                              capture_output=True, timeout=10)
+        if int(wide.stdout.decode().strip() or 0) <= limit:
+            return path
+        smaller = os.path.join(
+            workdir, "shown-{}.png".format(
+                hashlib.sha1(path.encode("utf-8")).hexdigest()[:12]))
+        subprocess.run(["convert", path, "-resize", "{}x>".format(limit), smaller],
+                       check=True, capture_output=True, timeout=60)
+        return smaller if os.path.exists(smaller) else path
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return path
+
+
+def as_image_page(path, workdir=""):
     """A picture, shown as a page.
 
     Written as a document holding one image, so the renderer draws it and
@@ -527,7 +556,8 @@ def as_image_page(path):
     reason a picture can be looked at here rather than handed away.
     """
     return "# {}\n\n![{}]({})\n".format(
-        os.path.basename(path), os.path.basename(path), as_dest(path))
+        os.path.basename(path), os.path.basename(path),
+        as_dest(shown_image(path, workdir)))
 
 
 def directory_listing(path):
@@ -782,7 +812,7 @@ def main():
                 ".md", ".markdown", ".mkd", ".mdown", ".mkdn", ".mdwn"):
             text = open(src, encoding="utf-8").read()
         elif file_kind(srcfile) == "image":
-            text = as_image_page(srcfile)
+            text = as_image_page(srcfile, os.path.dirname(os.path.realpath(out_md)))
         else:
             # Not a document: shown as what it is, rather than handed to
             # something that might do more than show it.
@@ -822,7 +852,9 @@ def main():
         if path is None:
             note("image {!r}: nothing there", target)
             return m.group(0)
-        return "![{}]({}{})".format(alt, as_dest(path), title)
+        return "![{}]({}{})".format(
+            alt, as_dest(shown_image(path, os.path.dirname(os.path.realpath(out_md)))),
+            title)
 
     table_ranges = []
 

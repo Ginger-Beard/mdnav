@@ -88,6 +88,19 @@ check "clicking [p back] goes back" "$out" "doc.md"
 out="$(drive 24 90 "$work/doc.md" | grep -c '\[q quit\]')"
 check "the bar offers the buttons" "$out" "1"
 
+echo "  coming back"
+# A document read down to the end, left, and returned to, should be where
+# it was rather than at the top of something already read.
+{
+  echo "# Deep"; echo
+  for i in $(seq 1 60); do echo "filler $i"; echo; done
+  echo "- [onward](notes/target.md)"
+} > "$work/deep.md"
+out="$(drive 24 90 "$work/deep.md" 'G' '\e[<0;6;22M' '\e[<0;6;22m' '\e[<35;70;20M' | last_bar)"
+check "the link at the end is followed" "$out" "target.md"
+out="$(drive 24 90 "$work/deep.md" 'G' '\e[<0;6;22M' '\e[<0;6;22m' 'p' '\e[<35;70;20M' | last_bar)"
+check "and coming back lands where it was left" "$out" "end"
+
 echo "  the link list"
 out="$(drive 24 90 "$work/doc.md" 'l' | last_bar)"
 check "carries a bar of its own" "$out" "a number to follow"

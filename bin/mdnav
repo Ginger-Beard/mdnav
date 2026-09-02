@@ -138,6 +138,8 @@ fi
 current="$(abspath "$file")"
 current="$(page_for "$current")"
 declare -a stack=()
+# Where the reader was in each document on the stack, kept alongside it.
+declare -a stack_top=()
 declare -a BUF=()
 declare -a HLBUF=()
 LINK_COUNT=0
@@ -230,6 +232,9 @@ query_cell_size() {
 }
 
 rewrite() {
+    # How wide the window is in pixels, so a picture can be scaled to it
+    # before it is drawn rather than after.
+    MDNAV_MAX_PX="$(( cols * cell_w ))" \
     python3 "$LIB/mdnav_rewrite.py" "$current" "$work/render.md" "$work/links.json" \
         "$SCHEME" || die "rewrite failed"
 }
@@ -735,6 +740,24 @@ run_search() {   # <direction> <prompt>
     esac
 }
 
+# Go back to the document left last, and to the place in it that was on
+# screen -- not to the top of a page whose beginning has already been
+# read. Returns 1 where there is nowhere to go.
+go_back() {
+    local last place
+    [ ${#stack[@]} -gt 0 ] || return 1
+    last=$(( ${#stack[@]} - 1 ))
+    current="${stack[$last]}"
+    place="${stack_top[$last]:-0}"
+    unset "stack[$last]" "stack_top[$last]"
+    HOVER_URI=""
+    load_buffer
+    top="$place"
+    [ "$top" -gt "$MT" ] && top="$MT"
+    [ "$top" -lt 0 ] && top=0
+    return 0
+}
+
 # Hand something to whatever opens things here. Backgrounded: a file
 # manager or a browser can take seconds to appear, and the pager should not
 # be waiting on it.
@@ -826,7 +849,7 @@ goto() {
     # and a listing of what it contains if it does not. Which of the two is
     # settled while resolving the link, so by now it is the second.
     if [ -d "$target" ]; then
-        stack+=("$current")
+        stack+=("$current"); stack_top+=("$top")
         current="$(page_for "$target")"
         PENDING_ANCHOR="$frag"
         return 0
@@ -852,7 +875,7 @@ goto() {
         *)  NOTICE="not shown: ${target##*/} is neither a document nor text"
             return 1 ;;
     esac
-    stack+=("$current")
+    stack+=("$current"); stack_top+=("$top")
     current="$target"
     PENDING_ANCHOR="$frag"
     return 0
@@ -1126,12 +1149,7 @@ ask_for_link() {
     read_pattern "follow link #: " "$prompt_row" digits || PATTERN=""
     case "$PROMPT_ACTION" in
         back)
-            if [ ${#stack[@]} -gt 0 ]; then
-                local last=$(( ${#stack[@]} - 1 ))
-                current="${stack[$last]}"; unset "stack[$last]"
-                HOVER_URI=""
-                load_buffer
-            fi
+            go_back || :
             PROMPT_ACTION=""
             return 0 ;;
         quit)
@@ -1469,12 +1487,7 @@ while :; do
             if [ "$MOUSE_ROW" = "$rows" ] && hint="$(bar_click "$MOUSE_COL")"; then
                 case "$hint" in
                     back)
-                        if [ ${#stack[@]} -gt 0 ]; then
-                            last=$(( ${#stack[@]} - 1 ))
-                            current="${stack[$last]}"; unset "stack[$last]"
-                            HOVER_URI=""
-                            load_buffer; draw_all; status
-                        fi ;;
+                        if go_back; then draw_all; status; fi ;;
                     list) ask_for_link; draw_all; status ;;
                     quit) break ;;
                 esac
@@ -1546,11 +1559,7 @@ while :; do
         char:r)
             load_buffer; draw_all; status ;;
         backspace|char:p)
-            if [ ${#stack[@]} -gt 0 ]; then
-                last=$(( ${#stack[@]} - 1 ))
-                current="${stack[$last]}"; unset "stack[$last]"
-                load_buffer; draw_all; status
-            fi ;;
+            if go_back; then draw_all; status; fi ;;
         char:l|char:L)
             ask_for_link
             draw_all; status ;;
@@ -1563,10 +1572,7 @@ while :; do
                 case "$KEY" in
                     char:q|char:x) break ;;
                     char:p)
-                        if [ ${#stack[@]} -gt 0 ]; then
-                            last=$(( ${#stack[@]} - 1 ))
-                            current="${stack[$last]}"; unset "stack[$last]"
-                            load_buffer
+                        if go_back; then
                             SEARCH_MSG=""
                         else
                             SEARCH_MSG="no previous file"

@@ -230,7 +230,8 @@ clicking. Nothing needs installing at all for that; `./bin/mdnav` runs as-is.
 
 ## What a link can point at
 
-- **Another Markdown file**, which opens in the same pane. `p` goes back.
+- **Another Markdown file**, which opens in the same pane. `p` goes back,
+  to the place you were reading rather than to the top.
 - **A place in this document** (`[see](#section)`), which scrolls there and
   marks the heading it landed on until you scroll, since near the end of a
   file the view cannot put it at the top. A numbered citation
@@ -470,10 +471,15 @@ This needs ImageMagick (`convert`) and a sixel terminal. Without either, images
 are left whole for mdcat to draw — everything still works, but a tall image
 jumps into view rather than scrolling.
 
-A picture wider than the window is narrowed to it on the way past. The
-renderer cannot do that: writing to a file, it has no way to ask the
-terminal how many pixels a column is, so it draws at the picture's own size
-and a wide diagram runs off the right. mdnav has asked, so it can.
+A picture wider than the window is narrowed to it before it is drawn,
+rather than after. Left alone the renderer encodes every pixel of the
+original, and that encoding then has to be decoded, scaled and encoded
+again to be cut into strips: for a photograph, seconds of it. Scaling
+first hands the renderer something already the right size, which for a
+2400-pixel picture is the difference between about 2.8 seconds and 0.7. The renderer cannot
+do the scaling itself: writing to a file, it has no way to ask the terminal
+how many pixels a column is, so it draws at the picture's own size and a
+wide diagram runs off the right. mdnav has asked, so it can.
 
 Strips are cached under `~/.cache/mdnav`, keyed by the image's own content,
 the height of a terminal cell and the width it was narrowed to -- so an
