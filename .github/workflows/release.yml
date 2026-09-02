@@ -1,8 +1,16 @@
 name: release
 
+# Releasing is changing the version in bin/mdnav. A push whose version has
+# no release yet gets one; every other push does nothing.
+#
+# Deliberately one job rather than two. Tagging from a workflow and letting
+# the tag set off a second one does not work: a tag pushed with the default
+# token does not trigger anything, by design, so the release would never
+# run. Publishing here creates the tag as part of the release instead.
 on:
   push:
-    tags: ["v*"]
+    branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -12,20 +20,29 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0          # tags, to see what is already out
 
-      # A tag saying one thing and the program saying another is worse
-      # than no tag at all, since the version is what a bug report cites.
-      - name: The tag and the program must agree
+      - name: Is this version already released?
+        id: check
         run: |
-          tag="${GITHUB_REF_NAME#v}"
-          in_source="$(sed -n 's/^VERSION=//p' bin/mdnav | head -1)"
-          if [ "$tag" != "$in_source" ]; then
-            echo "tag is $tag, bin/mdnav says $in_source" >&2
-            exit 1
+          version="$(sed -n 's/^VERSION=//p' bin/mdnav | head -1)"
+          case "$version" in
+            ''|*[!0-9.]*)
+              echo "bin/mdnav has no usable VERSION: '$version'" >&2
+              exit 1 ;;
+          esac
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if git rev-parse -q --verify "refs/tags/v$version" >/dev/null; then
+            echo "v$version is already released; nothing to do"
+            echo "publish=no" >> "$GITHUB_OUTPUT"
+          else
+            echo "v$version has no release yet"
+            echo "publish=yes" >> "$GITHUB_OUTPUT"
           fi
-          echo "both say $tag"
 
       - name: Check it before shipping it
+        if: steps.check.outputs.publish == 'yes'
         run: |
           python3 tests/test_helpers.py
           for f in bin/mdnav bin/mdnav-open install.sh uninstall.sh lib/*.sh; do
@@ -33,15 +50,22 @@ jobs:
           done
 
       - name: Build the tarball
+        if: steps.check.outputs.publish == 'yes'
         run: |
-          name="mdnav-${GITHUB_REF_NAME}"
+          name="mdnav-v${{ steps.check.outputs.version }}"
           mkdir -p "dist/$name"
           cp -r bin lib docs README.md LICENSE install.sh uninstall.sh "dist/$name/"
           tar -czf "dist/$name.tar.gz" -C dist "$name"
           ( cd dist && sha256sum "$name.tar.gz" > "$name.tar.gz.sha256" )
 
-      - uses: softprops/action-gh-release@v2
+      # The tag is made here, pointing at this commit, rather than pushed
+      # separately -- which is what keeps this to one workflow.
+      - name: Publish
+        if: steps.check.outputs.publish == 'yes'
+        uses: softprops/action-gh-release@v2
         with:
+          tag_name: v${{ steps.check.outputs.version }}
+          name: mdnav ${{ steps.check.outputs.version }}
           files: |
             dist/*.tar.gz
             dist/*.tar.gz.sha256

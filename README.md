@@ -551,6 +551,11 @@ only spelled in a case that does not match. See
 [Mermaid diagrams](#mermaid-diagrams) and
 [merman#113](https://github.com/Latias94/merman/issues/113).
 
+## Releases
+
+Built from a version change: alter `VERSION=` in `bin/mdnav` and the next
+push publishes it, with a tarball and its checksum. Nothing else does.
+
 ## Working on it
 
 [docs/developing.md](docs/developing.md) — what is where, how to run the

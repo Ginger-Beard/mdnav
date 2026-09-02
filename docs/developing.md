@@ -69,9 +69,16 @@ reused from earlier in the session.
 
 ## Releasing
 
-Tag it. `v1.2.3` must match `VERSION=` in `bin/mdnav`, or the workflow
-refuses. The tests run, and a tarball and its checksum are attached to a
-GitHub release.
+Change `VERSION=` in `bin/mdnav` and push. A push whose version has no
+release yet gets one: the tests run, a tarball and its checksum are built,
+and a release is published with the tag made for it. Every other push does
+nothing, so there is no separate step to remember and no way to release a
+version without the program agreeing what it is.
+
+It is one workflow rather than two on purpose. Tagging from a workflow and
+letting the tag set off a release does not work: a tag pushed with the
+default token triggers nothing, by design, so the release would never
+run.
 
 ## House style
 
