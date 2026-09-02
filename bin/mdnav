@@ -1071,33 +1071,25 @@ status() {
     # built, so a click on the bar can be answered by the thing the reader
     # was pointing at. Offsets first, since the bar is right-aligned and
     # where it starts is not known until it is finished.
+    # Bracketed, because a word that answers a click should look unlike one
+    # that does not, and brackets are the one way of saying so that does not
+    # depend on how a terminal draws anything. The bar is written in reverse
+    # video, and an underline under reverse video is drawn in what has become
+    # the background: it reads as a gap in the bar rather than as a line.
     #
-    # Underlined, because a word that answers a click should look unlike one
-    # that does not, and underlining is what a terminal already uses to say
-    # so. The underline covers exactly the part that answers, so what is
-    # marked and what is clickable cannot drift apart.
-    #
-    # Two strings are built together: one plain, whose length is the width
-    # the bar will occupy, and one styled, which is what is printed.
-    # Measuring the styled one would count the escapes, which occupy no
-    # columns, and the bar would come out short.
+    # The brackets are part of what answers, so pointing at one works, and
+    # what is drawn and what is clickable stay the same thing.
     local -a hit_at=() hit_do=()
-    local on=$'\e[4m' off=$'\e[24m' shown
-    right="click a link"
-    shown="click a link"
+    right="click a link "
     if [ ${#stack[@]} -gt 0 ]; then
-        hit_at+=("$(( ${#right} + 3 )):6"); hit_do+=("back")
-        right="$right · p back"
-        shown="$shown · ${on}p back${off}"
+        hit_at+=("$(( ${#right} + 1 )):8"); hit_do+=("back")
+        right="$right [p back]"
     fi
-    hit_at+=("$(( ${#right} + 3 )):6"); hit_do+=("list")
-    right="$right · l list"
-    shown="$shown · ${on}l list${off}"
-    hit_at+=("$(( ${#right} + 3 )):6"); hit_do+=("quit")
-    right="$right · q quit"
-    shown="$shown · ${on}q quit${off}"
+    hit_at+=("$(( ${#right} + 1 )):8"); hit_do+=("list")
+    right="$right [l list]"
+    hit_at+=("$(( ${#right} + 1 )):8"); hit_do+=("quit")
+    right="$right [q quit]"
     right="$right "
-    shown="$shown "
 
     if [ -n "$HOVER_URI" ]; then
         # The target gets the bar to itself. It is routinely longer than
@@ -1116,7 +1108,6 @@ status() {
         fi
         left=" -> ${target_shown}"
         right=""
-        shown=""
     fi
 
     pad=$(( cols - ${#left} - ${#right} ))
@@ -1140,7 +1131,7 @@ status() {
         # cut it, rather than showing an empty bar.
         printf '\e[0m\e[7m%-*.*s\e[0m' "$cols" "$cols" "$left"
     else
-        printf '\e[0m\e[7m%s%*s%s\e[0m' "$left" "$pad" "" "$shown"
+        printf '\e[0m\e[7m%s%*s%s\e[0m' "$left" "$pad" "" "$right"
     fi
     end_frame
 }
