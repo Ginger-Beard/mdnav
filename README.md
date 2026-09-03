@@ -542,8 +542,8 @@ because each workaround only acts when the problem is actually present.
 | [mdcat#39](https://github.com/BIRSAx2/mdcat/pull/39) | A quoted list loses the `│` on its lines after the first | fix open |
 | [mdcat#40](https://github.com/BIRSAx2/mdcat/pull/40) | A quoted code block loses the `│` on its lines | fix open |
 | mdcat | A link in a table cell keeps its style and loses its destination, so it is drawn as a link and is not one | fix written; worked around meanwhile |
-| [merman#113](https://github.com/Latias94/merman/issues/113) | Mermaid labels are not drawn at all: the font family is matched case-sensitively, and Mermaid asks for its own in lower case | reported; worked around |
-| [merman#117](https://github.com/Latias94/merman/issues/117) | A label on an arrow is drawn outside the diagram and clipped at its edge | reported; diagrams here keep their words in boxes |
+| [merman#113](https://github.com/Latias94/merman/issues/113) | Mermaid labels are not drawn at all: the font family is matched case-sensitively, and Mermaid asks for its own in lower case | fixed in merman 0.8.0-alpha.6; worked around here until mdcat takes it |
+| [merman#117](https://github.com/Latias94/merman/issues/117) | A label on an arrow is drawn outside the diagram and clipped at its edge | fixed in merman 0.8.0-alpha.6; diagrams here keep their words in boxes anyway |
 
 **Links in table cells.** mdnav knows the destination -- it wrote it -- so
 after rendering it compares what it asked for against what came out and
@@ -558,6 +558,14 @@ Mermaid asks for does not help, because the names were never missing --
 only spelled in a case that does not match. See
 [Mermaid diagrams](#mermaid-diagrams) and
 [merman#113](https://github.com/Latias94/merman/issues/113).
+
+Both Mermaid bugs are fixed in merman 0.8.0-alpha.6, which mdcat does not
+use yet: it pins 0.7.0, and 0.8 is a rearrangement into a workspace of
+separate crates rather than a version bump. So the workarounds stay for
+now. Neither will need unpicking when that lands: 0.8 refuses on principle
+to let a diagram's own `%%{init}%%` override the host's configuration, so
+the font mdnav names is ignored there -- rendering exactly what it would
+have rendered without it, which is now correct anyway.
 
 ## Releases
 
