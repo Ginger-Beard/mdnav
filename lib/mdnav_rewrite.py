@@ -845,7 +845,10 @@ def main():
         # absolute path to a file that does not exist only looks authoritative.
         return find_target(path, srcdir)
 
+    images = [0]
+
     def fix_image(m):
+        images[0] += 1
         alt, title = m.group("alt"), m.group("title") or ""
         target = destination(m)
         path = local_path(target)
@@ -985,6 +988,11 @@ def main():
     # are rendered. Zero for an ordinary document.
     with open(out_links + ".code", "w", encoding="utf-8") as f:
         json.dump(code_lines, f)
+
+    # How many images the page asks for, so a terminal that can draw none
+    # can be told so rather than leaving them to look like plain links.
+    with open(out_links + ".images", "w", encoding="utf-8") as f:
+        json.dump(images[0], f)
 
 
 if __name__ == "__main__":

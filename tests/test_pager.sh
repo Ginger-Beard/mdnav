@@ -121,6 +121,25 @@ echo "  a directory"
 out="$(drive 24 90 "$work/notes" | last_bar)"
 check "opens as a listing" "$out" "notes"
 
+echo "  a terminal that draws no images"
+printf '# Pics\n\n![a picture](%s)\n' "$here/../docs/click-round-trip.png" > "$work/pic.md"
+out="$(env -u KITTY_WINDOW_ID -u TERM_PROGRAM -u MDCAT_IMAGE_PROTOCOL MDNAV_IMAGE_PROTOCOL= \
+      MDNAV_DEBUG="$work/log" python3 "$here/drive.py" 24 90 "$work/pic.md" 2>/dev/null)"
+check "says so on the bar" "$out" "this terminal draws no images"
+check "and in the log" "$(cat "$work/log")" "image(s) not drawn"
+# Said only where the terminal could not do better: an explicit "none" is
+# the test driver's default, and a page without pictures has nothing to say.
+if drive 24 90 "$work/pic.md" | grep -qF "this terminal draws no images"; then
+    failed=$(( failed + 1 )); printf '    protocol none is only logged\n      but the bar said it\n'
+else
+    passed=$(( passed + 1 ))
+fi
+if drive 24 90 "$work/doc.md" | grep -qF "this terminal draws no images"; then
+    failed=$(( failed + 1 )); printf '    a page without pictures\n      got the notice\n'
+else
+    passed=$(( passed + 1 ))
+fi
+
 echo
 if [ "$failed" -gt 0 ]; then
     echo "  $failed of $(( passed + failed )) failed"

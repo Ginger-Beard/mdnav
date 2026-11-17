@@ -259,6 +259,26 @@ with tempfile.TemporaryDirectory() as tmp:
 
 # --- summary ----------------------------------------------------------
 print()
+# Images are counted for the pager, which says so on a terminal that can
+# draw none; one inside a code fence is shown, not an image.
+def image_count(text):
+    tmp = tempfile.mkdtemp()
+    try:
+        src = os.path.join(tmp, "doc.md")
+        io.open(src, "w").write(text)
+        jsonf = os.path.join(tmp, "links.json")
+        subprocess.run([sys.executable, os.path.join(LIB, "mdnav_rewrite.py"),
+                        src, os.path.join(tmp, "out.md"), jsonf, "mdnav"],
+                       capture_output=True)
+        import json
+        return json.load(io.open(jsonf + ".images"))
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+check("images are counted, code fences are not",
+      image_count("![a](x.png)\n\n```\n![b](y.png)\n```\n"), 1)
+
 if FAILURES:
     print("  %d of %d failed" % (len(FAILURES), COUNT))
     for failure in FAILURES:

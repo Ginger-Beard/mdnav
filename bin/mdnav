@@ -170,6 +170,8 @@ declare -a LIST_ROWS=()
 # happens. Used where an action declines, since a click that does nothing
 # and says nothing is indistinguishable from one that missed.
 NOTICE=""
+# Documents already told this terminal draws no images, one per line.
+IMAGES_TOLD=$'\n'
 # Where each hint sits on the bar, as "first:last:what".
 declare -a BAR_HITS=()
 declare -a MATCH_LINE=()
@@ -379,7 +381,8 @@ render_keep() {   # remember what was just rendered, under key $1
     fi
     mkdir -p "$work/cache/$slot" || return 0
     cp -f "$work/buffer.ansi" "$work/links.json" "$work/links.json.anchors" \
-          "$work/links.json.tables" "$work/spans.txt" "$work/links.txt" \
+          "$work/links.json.tables" "$work/links.json.images" \
+          "$work/spans.txt" "$work/links.txt" \
           "$work/cache/$slot/" 2>/dev/null || :
     RENDER_KEYS[$slot]="$1"
 }
@@ -398,7 +401,25 @@ load_buffer() {
         [ -n "${MDNAV_DEBUG:-}" ] && \
             printf 'mdnav: %s: rendered\n' "${current##*/}" >&4
     fi
-    : 
+    # A terminal that draws no images gets each one as a link instead, and
+    # nothing says why. Said on the bar once per document, in the log always.
+    local images
+    images="$(cat "$work/links.json.images" 2>/dev/null || echo 0)"
+    if [ "${images:-0}" -gt 0 ] 2>/dev/null \
+       && { [ -z "$IMAGE_PROTOCOL" ] || [ "$IMAGE_PROTOCOL" = none ]; }; then
+        [ -n "${MDNAV_DEBUG:-}" ] && \
+            printf 'mdnav: %s: %s image(s) not drawn: %s (TERM=%s TERM_PROGRAM=%s)\n' \
+                "${current##*/}" "$images" \
+                "$([ -z "$IMAGE_PROTOCOL" ] && echo "no image protocol: not kitty, Ghostty, iTerm2 or WezTerm, and no sixel in the reply to CSI c" || echo "image protocol set to none")" \
+                "${TERM:-}" "${TERM_PROGRAM:-}" >&4
+        if [ -z "$IMAGE_PROTOCOL" ]; then
+            case "$IMAGES_TOLD" in
+                *$'\n'"$current"$'\n'*) ;;
+                *)  IMAGES_TOLD="$IMAGES_TOLD$current"$'\n'
+                    NOTICE="this terminal draws no images: shown as links" ;;
+            esac
+        fi
+    fi
 
     load_lines "$work/buffer.ansi"
     SPAN=()

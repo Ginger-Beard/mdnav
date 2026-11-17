@@ -118,6 +118,9 @@ Then click these, which between them are everything a link can be:
 If all six do what they say, everything works on your terminal. If one
 does not, `MDNAV_DEBUG=/tmp/mdnav.log` will say why.
 
+On a terminal that draws no images at all, the picture above is a link
+instead, the bar says so when the page opens, and the log names the reason.
+
 And this should be a diagram rather than a code block — it is drawn by
 mdcat, sliced into strips, and scrolled through like anything else:
 
@@ -141,6 +144,7 @@ flowchart TB
 | bash 3.2+ | so stock macOS bash is enough |
 | `stty` | terminal size and raw input; from coreutils |
 | ImageMagick (`convert`) | **strongly wanted**: without it images are not sliced, and a tall one jumps into view rather than scrolling. See [Images are sliced](#images-are-sliced) |
+| a terminal that draws images | sixel, kitty or iTerm2 images: kitty, Ghostty, WezTerm, Konsole, foot, iTerm2, Windows Terminal. Ptyxis, GNOME Terminal and other VTE terminals, Alacritty, and xterm built without sixel draw none; there each image is shown as a link to it, and the bar says so |
 | `xdg-open` (Linux), `open` (macOS) | only for links to files that are not Markdown, which are handed to the desktop |
 
 Most of that is already on a working system; `python3` and `stty` effectively
